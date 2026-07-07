@@ -1,0 +1,24 @@
+class FirestorePaths {
+  FirestorePaths._();
+
+  static const String users = 'users';
+  static const String identity = 'identity';
+  static const String profile = 'profile';
+  static const String skills = 'skills';
+  static const String proofs = 'proofs';
+  static const String timeline = 'timeline';
+
+  static String userDoc(String userId) => '$users/$userId';
+
+  static String identityDoc(String userId) =>
+      '$users/$userId/$identity/$profile';
+
+  static String skillsCollection(String userId) =>
+      '$users/$userId/$skills';
+
+  static String proofsCollection(String userId) =>
+      '$users/$userId/$proofs';
+
+  static String timelineCollection(String userId) =>
+      '$users/$userId/$timeline';
+}

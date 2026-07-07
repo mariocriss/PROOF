@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "233832067155",
+    "project_id": "proof-e913a",
+    "storage_bucket": "proof-e913a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:233832067155:android:fa291498fc7a7158e096a6",
+        "android_client_info": {
+          "package_name": "com.proof.proof"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCOAYuogWwuuDyd9qmSx-UD3hi0-sCaxE4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
