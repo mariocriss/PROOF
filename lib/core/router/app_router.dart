@@ -2,8 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/features/auth/presentation/auth_screens.dart';
 import 'package:proof/features/identity/presentation/identity_screens.dart';
+import 'package:proof/features/proof_stack/presentation/proof_stack_screen.dart';
+import 'package:proof/features/proof_stack/presentation/skill_proof_stack_screen.dart';
 import 'package:proof/features/proofs/presentation/proofs_screens.dart';
 import 'package:proof/features/skills/presentation/skills_screens.dart';
+import 'package:proof/features/passport/presentation/passport_screen.dart';
+import 'package:proof/features/settings/presentation/settings_screens.dart';
 import 'package:proof/features/timeline/presentation/timeline_screens.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 
@@ -96,17 +100,46 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'add',
-            builder: (context, state) => const AddProofScreen(),
+            builder: (context, state) {
+              final query = state.uri.queryParameters;
+              return AddProofScreen(
+                skillId: query['skillId'],
+                initialResult: query['result'],
+                initialUnit: query['unit'],
+                isFirstProof: query['first'] == 'true',
+              );
+            },
           ),
         ],
       ),
       GoRoute(
         path: '/proof-stack',
         builder: (context, state) => const ProofStackScreen(),
+        routes: [
+          GoRoute(
+            path: ':skillId',
+            builder: (context, state) {
+              final skillId = state.pathParameters['skillId']!;
+              return SkillProofStackScreen(skillId: skillId);
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: '/timeline',
         builder: (context, state) => const TimelineScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/faq',
+        builder: (context, state) => const FaqScreen(),
+      ),
+      GoRoute(
+        path: '/about',
+        builder: (context, state) => const AboutScreen(),
       ),
       GoRoute(
         path: '/passport/:handle',

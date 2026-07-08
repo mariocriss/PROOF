@@ -255,6 +255,32 @@ class ProfileScreen extends ConsumerWidget {
                   subtitle: '@${identity.handle}',
                   onTap: () => context.push('/passport/${identity.handle}'),
                 ),
+                const SizedBox(height: 40),
+                const Divider(color: AppColors.border),
+                const SizedBox(height: 32),
+                const ProofMotto(),
+                const SizedBox(height: 28),
+                FooterLink(
+                  title: 'Settings',
+                  onTap: () => context.push('/settings'),
+                ),
+                FooterLink(
+                  title: 'FAQ',
+                  onTap: () => context.push('/faq'),
+                ),
+                FooterLink(
+                  title: 'About',
+                  onTap: () => context.push('/about'),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '${AppConstants.appName} · Physical Identity',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.inkMuted,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
               ],
             ),
           ),

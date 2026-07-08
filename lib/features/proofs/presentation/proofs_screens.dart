@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/date_utils.dart';
-import 'package:proof/core/utils/proof_stack_calculator.dart';
 import 'package:proof/core/utils/result_formatter.dart';
 import 'package:proof/core/utils/result_normalizer.dart';
+import 'package:proof/core/utils/validators.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
@@ -77,14 +78,45 @@ class ProofsScreen extends ConsumerWidget {
   }
 }
 
-class _ProofCard extends StatelessWidget {
+class _ProofCard extends ConsumerWidget {
   const _ProofCard({required this.proof, required this.skillName});
 
   final ProofModel proof;
   final String skillName;
 
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete proof?'),
+        content: Text(
+          'Remove this proof from your proof stack? Current best and confidence will be recalculated.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final user = ref.read(authServiceProvider).currentUser!;
+    await ref.read(firestoreServiceProvider).deleteProof(
+          userId: user.uid,
+          proofId: proof.id,
+        );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -117,6 +149,11 @@ class _ProofCard extends StatelessWidget {
                 label: proof.proofSource.label,
                 color: AppColors.accent,
               ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: AppColors.inkMuted),
+                onPressed: () => _delete(context, ref),
+                tooltip: 'Delete proof',
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -139,7 +176,18 @@ class _ProofCard extends StatelessWidget {
 }
 
 class AddProofScreen extends ConsumerStatefulWidget {
-  const AddProofScreen({super.key});
+  const AddProofScreen({
+    super.key,
+    this.skillId,
+    this.initialResult,
+    this.initialUnit,
+    this.isFirstProof = false,
+  });
+
+  final String? skillId;
+  final String? initialResult;
+  final String? initialUnit;
+  final bool isFirstProof;
 
   @override
   ConsumerState<AddProofScreen> createState() => _AddProofScreenState();
@@ -149,23 +197,48 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notesController = TextEditingController();
   final _locationController = TextEditingController();
+  late final TextEditingController _resultController;
   SkillModel? _selectedSkill;
+  late String _selectedUnit;
   DateTime? _recordedAt;
   ProofSource _proofSource = ProofSource.selfReported;
   File? _mediaFile;
   bool _isLoading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _resultController = TextEditingController(text: widget.initialResult ?? '');
+    _selectedUnit = widget.initialUnit ?? '';
+    if (widget.isFirstProof) {
+      _recordedAt = DateTime.now();
+    }
+  }
+
+  @override
   void dispose() {
     _notesController.dispose();
     _locationController.dispose();
+    _resultController.dispose();
     super.dispose();
   }
 
   void _onSkillChanged(SkillModel? skill) {
     setState(() {
       _selectedSkill = skill;
-      _recordedAt = skill?.createdAt;
+      if (skill != null) {
+        if (widget.isFirstProof &&
+            widget.initialUnit != null &&
+            widget.initialUnit!.isNotEmpty) {
+          _selectedUnit = widget.initialUnit!;
+        } else {
+          _selectedUnit = skill.defaultUnit;
+          if (!widget.isFirstProof) {
+            _resultController.clear();
+          }
+        }
+        _recordedAt ??= DateTime.now();
+      }
     });
   }
 
@@ -185,11 +258,10 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
       return;
     }
 
-    if (skill.currentBest == null || skill.currentBest!.isEmpty) {
+    final resultRaw = _resultController.text.trim();
+    if (resultRaw.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This skill has no result yet. Add a current best on the skill first.'),
-        ),
+        const SnackBar(content: Text('Please enter a result')),
       );
       return;
     }
@@ -198,9 +270,8 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
 
     try {
       final user = ref.read(authServiceProvider).currentUser!;
-      final resultRaw = skill.currentBest!;
-      final unit = skill.currentBestUnit ?? skill.defaultUnit;
-      final recordedAt = _recordedAt ?? skill.createdAt;
+      final unit = _selectedUnit.isNotEmpty ? _selectedUnit : skill.defaultUnit;
+      final recordedAt = _recordedAt ?? DateTime.now();
       final normalized = ResultNormalizer.normalize(
         rawValue: resultRaw,
         unit: unit,
@@ -240,7 +311,13 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
       );
 
       await ref.read(firestoreServiceProvider).addProof(proof);
-      if (mounted) context.pop();
+      if (!mounted) return;
+
+      if (widget.isFirstProof) {
+        context.go('/skills/${skill.id}');
+      } else {
+        context.pop();
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -252,42 +329,49 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
 
     return Scaffold(
       appBar: ProofAppBar(
-        title: 'Add proof',
+        title: widget.isFirstProof ? 'First proof' : 'Add proof',
         leading: BackButton(onPressed: () => context.pop()),
       ),
       body: skillsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (skills) {
-          final activeSkills = skills
-              .where((s) =>
-                  s.status == SkillStatus.active &&
-                  s.currentBest != null &&
-                  s.currentBest!.isNotEmpty)
-              .toList();
+          final activeSkills =
+              skills.where((s) => s.status == SkillStatus.active).toList();
 
-          if (activeSkills.isEmpty) {
-            final hasSkillsWithoutResult = skills.any(
-              (s) =>
-                  s.status == SkillStatus.active &&
-                  (s.currentBest == null || s.currentBest!.isEmpty),
-            );
+          if (activeSkills.isEmpty && !widget.isFirstProof) {
             return EmptyState(
-              title: skills.isEmpty ? 'Add a skill first' : 'No provable skills',
-              message: skills.isEmpty
-                  ? 'You need at least one skill before adding proofs.'
-                  : hasSkillsWithoutResult
-                      ? 'Add a current best to your skill before documenting proof.'
-                      : 'Reactivate a paused or archived skill to add new proofs.',
+              title: 'Add a skill first',
+              message:
+                  'Proofs document performance for a capability you already track. Start by adding a skill.',
               action: ProofButton(
-                label: skills.isEmpty ? 'Add skill' : 'View skills',
-                onPressed: () => context.push('/skills'),
+                label: 'Add skill',
+                onPressed: () => context.push('/skills/add'),
               ),
             );
           }
 
+          final targetSkillId = widget.skillId;
+          if (targetSkillId != null && _selectedSkill == null) {
+            final match = activeSkills
+                .where((s) => s.id == targetSkillId)
+                .firstOrNull;
+            if (match != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _onSkillChanged(match);
+              });
+            }
+          }
+
+          if (widget.isFirstProof && _selectedSkill == null && targetSkillId != null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
           final skill = _selectedSkill;
-          final recordedAt = _recordedAt ?? skill?.createdAt;
+          final recordedAt = _recordedAt ?? DateTime.now();
+          final unit = _selectedUnit.isNotEmpty
+              ? _selectedUnit
+              : skill?.defaultUnit ?? MeasurementUnits.reps;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -296,36 +380,64 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Document evidence using the result already on your skill.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  DropdownButtonFormField<SkillModel>(
-                    initialValue: _selectedSkill,
-                    decoration: const InputDecoration(labelText: 'Skill'),
-                    items: activeSkills
-                        .map(
-                          (s) => DropdownMenuItem(
-                            value: s,
-                            child: Text('${s.name} · ${s.formattedCurrentBest}'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _onSkillChanged,
-                    validator: (v) => v == null ? 'Select a skill' : null,
-                  ),
-                  if (skill != null && recordedAt != null) ...[
+                  if (widget.isFirstProof) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Text(
+                        "Great! Let's document your first proof.",
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ] else ...[
+                    Text(
+                      'Record another result for a skill you track. Every proof strengthens your proof stack.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                  if (widget.isFirstProof && skill != null)
+                    ReadOnlyValueField(label: 'Skill', value: skill.name)
+                  else
+                    DropdownButtonFormField<SkillModel>(
+                      initialValue: _selectedSkill,
+                      decoration: const InputDecoration(labelText: 'Skill'),
+                      items: activeSkills
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(s.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _onSkillChanged,
+                      validator: (v) => v == null ? 'Select a skill' : null,
+                    ),
+                  if (skill != null) ...[
                     const SizedBox(height: 16),
-                    ReadOnlyValueField(
+                    ResultInputField(
+                      controller: _resultController,
+                      measurementType: skill.measurementType,
+                      unit: unit,
                       label: 'Result',
-                      value: skill.formattedCurrentBest ?? '—',
+                      validator: (v) => Validators.required(v, field: 'Result'),
                     ),
                     const SizedBox(height: 16),
                     UnitSelector(
-                      allowedUnits: [skill.currentBestUnit ?? skill.defaultUnit],
-                      selectedUnit: skill.currentBestUnit ?? skill.defaultUnit,
-                      onChanged: (_) {},
+                      allowedUnits: skill.allowedUnits,
+                      selectedUnit: unit,
+                      onChanged: (u) => setState(() => _selectedUnit = u),
                     ),
                     const SizedBox(height: 16),
                     DateTimePickerField(
@@ -334,30 +446,20 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                       onChanged: (dt) => setState(() => _recordedAt = dt),
                     ),
                     const SizedBox(height: 16),
-                    ProofTextField(
-                      controller: _locationController,
-                      label: 'Location',
-                      hint: 'e.g. Amsterdam, HYROX Rotterdam',
+                    Text(
+                      'Verified by',
+                      style: Theme.of(context).textTheme.labelLarge,
                     ),
-                    const SizedBox(height: 16),
-                    ProofTextField(
-                      controller: _notesController,
-                      label: 'Notes',
-                      hint: 'Optional context about this evidence',
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 24),
-                    Text('PROOF', style: Theme.of(context).textTheme.labelLarge),
                     const SizedBox(height: 4),
                     Text(
-                      'How was this result verified? Confidence is calculated from your proof stack.',
+                      'Choose self-reported or coach verified. Coach verified proofs strengthen your stack confidence.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: ProofSource.values.map((source) {
+                      children: ProofSource.selectable.map((source) {
                         final selected = _proofSource == source;
                         return ChoiceChip(
                           label: Text(source.label),
@@ -372,21 +474,19 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                         );
                       }).toList(),
                     ),
-                    if (skill.stackConfidence != null) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Text(
-                            'Current stack confidence: ',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                          ConfidenceBadge(
-                            label: skill.stackConfidence!.label,
-                            color: skill.stackConfidence!.color,
-                          ),
-                        ],
-                      ),
-                    ],
+                    const SizedBox(height: 24),
+                    ProofTextField(
+                      controller: _locationController,
+                      label: 'Location',
+                      hint: 'Optional — e.g. Amsterdam, HYROX Rotterdam',
+                    ),
+                    const SizedBox(height: 16),
+                    ProofTextField(
+                      controller: _notesController,
+                      label: 'Personal notes',
+                      hint: 'Optional context about this evidence',
+                      maxLines: 3,
+                    ),
                     const SizedBox(height: 16),
                     OutlinedButton.icon(
                       onPressed: _pickMedia,
@@ -399,7 +499,7 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                     ),
                     const SizedBox(height: 32),
                     ProofButton(
-                      label: 'Add proof',
+                      label: widget.isFirstProof ? 'Save first proof' : 'Add proof',
                       isLoading: _isLoading,
                       onPressed: _save,
                     ),
@@ -407,135 +507,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                 ],
               ),
             ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class ProofStackScreen extends ConsumerWidget {
-  const ProofStackScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final skillsAsync = ref.watch(skillsProvider);
-    final proofsAsync = ref.watch(proofsProvider);
-
-    return Scaffold(
-      appBar: ProofAppBar(
-        title: 'Proof Stack',
-        leading: BackButton(onPressed: () => context.pop()),
-      ),
-      body: skillsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (skills) {
-          final proofs = proofsAsync.valueOrNull ?? [];
-
-          if (skills.isEmpty || proofs.isEmpty) {
-            return EmptyState(
-              title: 'No evidence yet',
-              message:
-                  'Your proof stack grows every time you document a measurable result.',
-              action: ProofButton(
-                label: skills.isEmpty ? 'Add skill' : 'Add First Proof',
-                onPressed: () => context.push(
-                  skills.isEmpty ? '/skills/add' : '/proofs/add',
-                ),
-              ),
-            );
-          }
-
-          final proofsBySkill = <String, List<ProofModel>>{};
-          for (final proof in proofs) {
-            proofsBySkill.putIfAbsent(proof.skillId, () => []).add(proof);
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(24),
-            itemCount: skills.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 16),
-            itemBuilder: (context, index) {
-              final skill = skills[index];
-              final skillProofs = proofsBySkill[skill.id] ?? [];
-              final confidence = skill.stackConfidence ??
-                  ProofStackCalculator.calculate(skillProofs);
-
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            skill.name,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        ConfidenceBadge(
-                          label: confidence.label,
-                          color: confidence.color,
-                        ),
-                      ],
-                    ),
-                    if (skill.formattedCurrentBest != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Personal best: ${skill.formattedCurrentBest}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Text(
-                      '${skillProofs.length} proofs · ${skill.discipline}',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    if (skillProofs.isEmpty)
-                      Text(
-                        'No proofs for this skill yet',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      )
-                    else
-                      ...skillProofs.map(
-                        (proof) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      proof.formattedResult,
-                                      style: Theme.of(context).textTheme.bodyLarge,
-                                    ),
-                                    Text(
-                                      '${ProofDateUtils.formatDate(proof.recordedAt)} · ${proof.proofSource.label}',
-                                      style: Theme.of(context).textTheme.labelSmall,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
           );
         },
       ),

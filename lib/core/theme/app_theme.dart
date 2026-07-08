@@ -110,11 +110,29 @@ class AppTheme {
         color: AppColors.ink,
         letterSpacing: -1,
       ),
+      displayMedium: GoogleFonts.inter(
+        fontSize: 28,
+        fontWeight: FontWeight.w600,
+        color: AppColors.ink,
+        letterSpacing: -0.6,
+      ),
+      displaySmall: GoogleFonts.inter(
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        color: AppColors.ink,
+        letterSpacing: -0.5,
+      ),
       headlineMedium: GoogleFonts.inter(
         fontSize: 22,
         fontWeight: FontWeight.w600,
         color: AppColors.ink,
         letterSpacing: -0.5,
+      ),
+      headlineSmall: GoogleFonts.inter(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: AppColors.ink,
+        letterSpacing: -0.3,
       ),
       titleLarge: GoogleFonts.inter(
         fontSize: 18,

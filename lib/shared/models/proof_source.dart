@@ -8,11 +8,14 @@ enum ProofSource {
   final String label;
 
   static ProofSource fromString(String? value) {
-    return ProofSource.values.firstWhere(
-      (s) => s.value == value,
-      orElse: () => ProofSource.selfReported,
-    );
+    if (value == coach.value) return ProofSource.coach;
+    return ProofSource.selfReported;
   }
 
   bool get isTrusted => this == ProofSource.coach;
+
+  static const List<ProofSource> selectable = [
+    selfReported,
+    coach,
+  ];
 }

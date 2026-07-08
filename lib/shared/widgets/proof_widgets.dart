@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proof/core/constants/app_constants.dart';
 import 'package:proof/core/theme/app_colors.dart';
 
 class ProofButton extends StatelessWidget {
@@ -201,6 +202,83 @@ class SectionHeader extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.labelLarge),
           if (action != null) action!,
         ],
+      ),
+    );
+  }
+}
+
+class ProofMotto extends StatelessWidget {
+  const ProofMotto({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          AppConstants.appName,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: AppColors.accent,
+                letterSpacing: 3,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Your body tells a story.',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                letterSpacing: -0.2,
+                color: AppColors.inkSecondary,
+              ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'PROOF keeps it forever.',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: AppColors.accent,
+                letterSpacing: -0.2,
+                fontWeight: FontWeight.w600,
+              ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+class FooterLink extends StatelessWidget {
+  const FooterLink({
+    super.key,
+    required this.title,
+    required this.onTap,
+  });
+
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        child: Row(
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.inkSecondary,
+                  ),
+            ),
+            const Spacer(),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.inkMuted,
+            ),
+          ],
+        ),
       ),
     );
   }

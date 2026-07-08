@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/core/theme/app_colors.dart';
-import 'package:proof/core/utils/result_normalizer.dart';
 import 'package:proof/core/utils/unit_helpers.dart';
+import 'package:proof/core/utils/skill_uniqueness.dart';
 import 'package:proof/core/utils/validators.dart';
 import 'package:proof/features/skills/data/skill_catalog.dart';
 import 'package:proof/shared/models/measurement_type.dart';
@@ -39,10 +39,16 @@ class SkillsScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (skills) {
-          if (skills.isEmpty) {
+          final visibleSkills = skills
+              .where((s) => s.status != SkillStatus.archived)
+              .toList();
+
+          if (visibleSkills.isEmpty) {
             return EmptyState(
               title: 'No skills yet',
-              message: 'Skills represent physical capabilities you can prove.',
+              message:
+                  'Skills represent physical capabilities you track.\n'
+                  'Each skill owns one Proof Stack for its lifetime evidence.',
               action: ProofButton(
                 label: 'Add skill',
                 onPressed: () => context.push('/skills/add'),
@@ -51,11 +57,11 @@ class SkillsScreen extends ConsumerWidget {
           }
           return ListView.separated(
             padding: const EdgeInsets.all(24),
-            itemCount: skills.length,
+            itemCount: visibleSkills.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) => _SkillCard(
-              skill: skills[index],
-              onTap: () => context.push('/skills/${skills[index].id}'),
+              skill: visibleSkills[index],
+              onTap: () => context.push('/skills/${visibleSkills[index].id}'),
             ),
           );
         },
@@ -121,7 +127,7 @@ class _SkillCard extends StatelessWidget {
               if (skill.formattedCurrentBest != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Personal best: ${skill.formattedCurrentBest}',
+                  'Current best: ${skill.formattedCurrentBest}',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: AppColors.accent,
                         fontWeight: FontWeight.w600,
@@ -334,7 +340,7 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _disciplineController;
   late final TextEditingController _descriptionController;
-  late final TextEditingController _currentBestController;
+  late final TextEditingController _resultController;
   late final TextEditingController _targetController;
 
   late MeasurementType _measurementType;
@@ -356,7 +362,7 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
       text: widget.entry.isCustom ? 'Other' : widget.entry.discipline,
     );
     _descriptionController = TextEditingController();
-    _currentBestController = TextEditingController();
+    _resultController = TextEditingController();
     _targetController = TextEditingController();
     _measurementType = widget.entry.measurementType;
     _performanceType = widget.entry.performanceType;
@@ -375,7 +381,7 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
     _nameController.dispose();
     _disciplineController.dispose();
     _descriptionController.dispose();
-    _currentBestController.dispose();
+    _resultController.dispose();
     _targetController.dispose();
     super.dispose();
   }
@@ -396,17 +402,8 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
 
     try {
       final user = ref.read(authServiceProvider).currentUser!;
-      final bestRaw = _currentBestController.text.trim();
+      final resultRaw = _resultController.text.trim();
       final targetRaw = _targetController.text.trim();
-      NormalizedResult? normalized;
-
-      if (bestRaw.isNotEmpty) {
-        normalized = ResultNormalizer.normalize(
-          rawValue: bestRaw,
-          unit: _selectedUnit,
-          measurementType: _measurementType,
-        );
-      }
 
       final skill = SkillModel(
         id: const Uuid().v4(),
@@ -419,16 +416,29 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
         measurementType: _measurementType,
         performanceType: _performanceType,
         catalogId: _isCustom ? null : widget.entry.id,
-        currentBest: bestRaw.isEmpty ? null : bestRaw,
-        currentBestUnit: bestRaw.isEmpty ? null : _selectedUnit,
-        normalizedBestValue: normalized?.normalizedValue,
         targetValue: targetRaw.isEmpty ? null : targetRaw,
         targetUnit: targetRaw.isEmpty ? null : _targetUnit,
         createdAt: DateTime.now(),
       );
 
       await ref.read(firestoreServiceProvider).addSkill(skill);
-      if (mounted) context.pop();
+      if (!mounted) return;
+
+      context.pushReplacement(
+        Uri(
+          path: '/proofs/add',
+          queryParameters: {
+            'skillId': skill.id,
+            'result': resultRaw,
+            'unit': _selectedUnit,
+            'first': 'true',
+          },
+        ).toString(),
+      );
+    } on DuplicateSkillException catch (e) {
+      if (mounted) {
+        await _showDuplicateSkillDialog(context, e.existing);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -514,27 +524,9 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
               const SizedBox(height: 16),
               ProofTextField(
                 controller: _descriptionController,
-                label: 'Description',
-                hint: 'e.g. Strict form only. Training for HYROX.',
+                label: 'Personal notes',
+                hint: 'Optional — e.g. Strict form only. Training for HYROX.',
                 maxLines: 3,
-              ),
-              const SizedBox(height: 16),
-              Text('Current best', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              ResultInputField(
-                controller: _currentBestController,
-                measurementType: _measurementType,
-                unit: _selectedUnit,
-                label: 'Current best',
-              ),
-              const SizedBox(height: 16),
-              UnitSelector(
-                allowedUnits: _allowedUnits,
-                selectedUnit: _selectedUnit,
-                onChanged: (u) => setState(() {
-                  _selectedUnit = u;
-                  _targetUnit = u;
-                }),
               ),
               const SizedBox(height: 24),
               Text('Target (optional)', style: Theme.of(context).textTheme.labelLarge),
@@ -543,7 +535,7 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
                 controller: _targetController,
                 measurementType: _measurementType,
                 unit: _targetUnit,
-                label: 'Target value',
+                label: 'Target',
               ),
               const SizedBox(height: 16),
               UnitSelector(
@@ -551,6 +543,29 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
                 allowedUnits: _allowedUnits,
                 selectedUnit: _targetUnit,
                 onChanged: (u) => setState(() => _targetUnit = u),
+              ),
+              const SizedBox(height: 24),
+              Text('First result', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 4),
+              Text(
+                'Your first recorded performance — not your all-time best.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.inkMuted,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              ResultInputField(
+                controller: _resultController,
+                measurementType: _measurementType,
+                unit: _selectedUnit,
+                label: 'First result',
+                validator: (v) => Validators.required(v, field: 'First result'),
+              ),
+              const SizedBox(height: 16),
+              UnitSelector(
+                allowedUnits: _allowedUnits,
+                selectedUnit: _selectedUnit,
+                onChanged: (u) => setState(() => _selectedUnit = u),
               ),
               const SizedBox(height: 32),
               ProofButton(
@@ -563,6 +578,45 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
         ),
       ),
     );
+  }
+}
+
+Future<void> _showDuplicateSkillDialog(
+  BuildContext context,
+  SkillModel existing,
+) async {
+  final action = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('You already track this skill'),
+      content: const Text(
+        'Every capability has one Proof Stack.\n'
+        'Record a new Proof to continue building your history.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'cancel'),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'stack'),
+          child: const Text('View Proof Stack'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'proof'),
+          child: const Text('Add Proof'),
+        ),
+      ],
+    ),
+  );
+
+  if (!context.mounted || action == null || action == 'cancel') return;
+
+  switch (action) {
+    case 'proof':
+      context.push('/proofs/add?skillId=${existing.id}');
+    case 'stack':
+      context.push('/proof-stack/${existing.id}');
   }
 }
 
@@ -738,12 +792,19 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
             ),
             if (skill.formattedCurrentBest != null) ...[
               const SizedBox(height: 24),
-              Text('Personal best', style: Theme.of(context).textTheme.labelLarge),
+              Text('Current best', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 4),
               Text(
                 skill.formattedCurrentBest!,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       color: AppColors.accent,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Calculated from your proof stack',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.inkMuted,
                     ),
               ),
             ],
@@ -755,11 +816,22 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
             ],
             if (skill.description.isNotEmpty) ...[
               const SizedBox(height: 24),
-              Text('Description', style: Theme.of(context).textTheme.labelLarge),
+              Text('Personal notes', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 4),
               Text(skill.description, style: Theme.of(context).textTheme.bodyLarge),
             ],
             const SizedBox(height: 32),
+            ProofButton(
+              label: 'View Proof Stack',
+              onPressed: () => context.push('/proof-stack/${skill.id}'),
+            ),
+            const SizedBox(height: 12),
+            ProofButton(
+              label: 'Add proof',
+              isOutlined: true,
+              onPressed: () => context.push('/proofs/add?skillId=${skill.id}'),
+            ),
+            const SizedBox(height: 16),
             Text('Manage skill', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 12),
             if (skill.status != SkillStatus.active)
@@ -796,11 +868,6 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
               isOutlined: true,
               isLoading: _isLoading,
               onPressed: _delete,
-            ),
-            const SizedBox(height: 16),
-            ProofButton(
-              label: 'Add proof',
-              onPressed: () => context.push('/proofs/add'),
             ),
           ],
         ),

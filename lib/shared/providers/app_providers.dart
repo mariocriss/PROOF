@@ -63,12 +63,21 @@ final skillsProvider = StreamProvider<List<SkillModel>>((ref) {
   return authState.when(
     data: (user) {
       if (user == null) return Stream.value([]);
-      return ref.watch(firestoreServiceProvider).watchSkills(user.uid);
+      final service = ref.watch(firestoreServiceProvider);
+      return _skillsWithMerge(service, user.uid);
     },
     loading: () => Stream.value([]),
     error: (_, __) => Stream.value([]),
   );
 });
+
+Stream<List<SkillModel>> _skillsWithMerge(
+  FirestoreService service,
+  String userId,
+) async* {
+  await service.mergeDuplicateSkillsIfNeeded(userId);
+  yield* service.watchSkills(userId);
+}
 
 final proofsProvider = StreamProvider<List<ProofModel>>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -87,11 +96,35 @@ final timelineProvider = StreamProvider<List<TimelineEvent>>((ref) {
   return authState.when(
     data: (user) {
       if (user == null) return Stream.value([]);
-      return ref.watch(firestoreServiceProvider).watchTimeline(user.uid);
+      final service = ref.watch(firestoreServiceProvider);
+      return _timelineWithMigration(service, user.uid);
     },
     loading: () => Stream.value([]),
     error: (_, __) => Stream.value([]),
   );
+});
+
+Stream<List<TimelineEvent>> _timelineWithMigration(
+  FirestoreService service,
+  String userId,
+) async* {
+  await service.migrateTimelineIfNeeded(userId);
+  yield* service.watchTimeline(userId);
+}
+
+final publicSkillsProvider =
+    StreamProvider.family<List<SkillModel>, String>((ref, userId) {
+  return ref.watch(firestoreServiceProvider).watchSkills(userId);
+});
+
+final publicProofsProvider =
+    StreamProvider.family<List<ProofModel>, String>((ref, userId) {
+  return ref.watch(firestoreServiceProvider).watchProofs(userId);
+});
+
+final publicTimelineProvider =
+    StreamProvider.family<List<TimelineEvent>, String>((ref, userId) {
+  return ref.watch(firestoreServiceProvider).watchTimeline(userId);
 });
 
 final identityByHandleProvider =
