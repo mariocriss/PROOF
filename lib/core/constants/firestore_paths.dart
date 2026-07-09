@@ -7,6 +7,9 @@ class FirestorePaths {
   static const String skills = 'skills';
   static const String proofs = 'proofs';
   static const String timeline = 'timeline';
+  static const String relationships = 'relationships';
+  static const String verificationRequests = 'verificationRequests';
+  static const String coachProfiles = 'coachProfiles';
 
   static String userDoc(String userId) => '$users/$userId';
 

@@ -1,6 +1,5 @@
 import 'package:proof/shared/models/confidence_level.dart';
 import 'package:proof/shared/models/proof_model.dart';
-import 'package:proof/shared/models/proof_source.dart';
 
 /// Computes stack confidence from proof history for a skill.
 class ProofStackCalculator {
@@ -14,7 +13,7 @@ class ProofStackCalculator {
     final distinctDates = dates.length;
     final spanDays = _spanDays(proofs);
     final coachProofCount =
-        proofs.where((p) => p.proofSource == ProofSource.coach).length;
+        proofs.where((p) => p.isCoachVerifiedForStack).length;
 
     if (count >= 20 &&
         spanDays >= 180 &&
@@ -53,7 +52,7 @@ class ProofStackCalculator {
         .whereType<double>()
         .toList();
     if (values.length < 3) {
-      return proofs.where((p) => p.proofSource.isTrusted).length >= 2;
+      return proofs.where((p) => p.isCoachVerifiedForStack).length >= 2;
     }
     values.sort();
     return values.last > values.first;

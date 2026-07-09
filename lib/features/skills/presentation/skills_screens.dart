@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:proof/core/constants/app_constants.dart';
+import 'package:proof/core/utils/confidence_progress_segments.dart';
+import 'package:proof/core/utils/date_utils.dart';
+import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
+import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/unit_helpers.dart';
@@ -13,142 +18,785 @@ import 'package:proof/shared/models/skill_catalog_entry.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/skill_status.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/widgets/confidence_block_progress.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 import 'package:proof/shared/widgets/unit_selector.dart';
 import 'package:uuid/uuid.dart';
 
-class SkillsScreen extends ConsumerWidget {
-  const SkillsScreen({super.key});
+class SkillsScreen extends ConsumerStatefulWidget {
+  const SkillsScreen({super.key, this.showBackButton = true});
+
+  final bool showBackButton;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SkillsScreen> createState() => _SkillsScreenState();
+}
+
+class _SkillsScreenState extends ConsumerState<SkillsScreen> {
+  String? _disciplineFilter;
+
+  @override
+  Widget build(BuildContext context) {
     final skillsAsync = ref.watch(skillsProvider);
+    final proofsAsync = ref.watch(proofsProvider);
 
     return Scaffold(
-      appBar: ProofAppBar(
-        title: 'Skills',
-        leading: BackButton(onPressed: () => context.pop()),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => context.push('/skills/add'),
-          ),
-        ],
-      ),
-      body: skillsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (skills) {
-          final visibleSkills = skills
-              .where((s) => s.status != SkillStatus.archived)
-              .toList();
-
-          if (visibleSkills.isEmpty) {
-            return EmptyState(
-              title: 'No skills yet',
-              message:
-                  'Skills represent physical capabilities you track.\n'
-                  'Each skill owns one Proof Stack for its lifetime evidence.',
-              action: ProofButton(
-                label: 'Add skill',
-                onPressed: () => context.push('/skills/add'),
-              ),
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: skillsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Error: $e')),
+          data: (skills) {
+            final visibleSkills = skills
+                .where((s) => s.status != SkillStatus.archived)
+                .toList();
+            final proofs = proofsAsync.valueOrNull ?? [];
+            final summaries = ProofStackMerge.buildSummaries(
+              skills: skills,
+              proofs: proofs,
             );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(24),
-            itemCount: visibleSkills.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) => _SkillCard(
-              skill: visibleSkills[index],
-              onTap: () => context.push('/skills/${visibleSkills[index].id}'),
-            ),
-          );
-        },
+            final disciplines = List<String>.from(SkillCatalog.disciplines);
+            final filteredSummaries = _disciplineFilter == null
+                ? summaries
+                : summaries
+                    .where(
+                      (s) =>
+                          s.skill.discipline.toLowerCase() ==
+                          _disciplineFilter!.toLowerCase(),
+                    )
+                    .toList();
+
+            if (visibleSkills.isEmpty) {
+              return _SkillsScrollContent(
+                children: [
+                  _SkillsHeader(onAdd: () => context.push('/skills/add')),
+                  const SizedBox(height: 32),
+                  _SkillsEmptyState(
+                    onAdd: () => context.push('/skills/add'),
+                  ),
+                  const SizedBox(height: 40),
+                  const _SkillsFooter(),
+                ],
+              );
+            }
+
+            return _SkillsScrollContent(
+              children: [
+                _SkillsHeader(onAdd: () => context.push('/skills/add')),
+                const SizedBox(height: 24),
+                _SkillsDisciplineFilters(
+                  disciplines: disciplines,
+                  selected: _disciplineFilter,
+                  onSelected: (value) => setState(() => _disciplineFilter = value),
+                ),
+                const SizedBox(height: 24),
+                if (filteredSummaries.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No skills in this discipline yet.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.inkSecondary,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  ...filteredSummaries.map(
+                    (summary) => Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _SkillsPremiumCard(
+                        summary: summary,
+                        onTap: () =>
+                            context.push('/skills/${summary.skill.id}'),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                const _SkillsTipCard(),
+                const SizedBox(height: 24),
+                _SkillsTrackNewCard(
+                  onTap: () => context.push('/skills/add'),
+                ),
+                const SizedBox(height: 40),
+                const _SkillsFooter(),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-class _SkillCard extends StatelessWidget {
-  const _SkillCard({required this.skill, required this.onTap});
+class _SkillsScrollContent extends StatelessWidget {
+  const _SkillsScrollContent({required this.children});
 
-  final SkillModel skill;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 100),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _SkillsHeader extends StatelessWidget {
+  const _SkillsHeader({required this.onAdd});
+
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Skills',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Every capability you track has one Proof Stack.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.inkSecondary,
+                      height: 1.4,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Material(
+          color: AppColors.accent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: onAdd,
+            customBorder: const CircleBorder(),
+            child: const SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(Icons.add, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SkillsDisciplineFilters extends StatelessWidget {
+  const _SkillsDisciplineFilters({
+    required this.disciplines,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> disciplines;
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: Stack(
+        children: [
+          ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(right: 34),
+            children: [
+              _SkillsFilterChip(
+                label: 'All Skills',
+                selected: selected == null,
+                onTap: () => onSelected(null),
+              ),
+              ...disciplines.map(
+                (discipline) => _SkillsFilterChip(
+                  label: discipline,
+                  selected: selected == discipline,
+                  onTap: () => onSelected(discipline),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(
+                width: 34,
+                alignment: Alignment.centerRight,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      AppColors.background.withValues(alpha: 0),
+                      AppColors.background,
+                    ],
+                  ),
+                ),
+                child: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.inkMuted,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkillsFilterChip extends StatelessWidget {
+  const _SkillsFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: selected ? AppColors.accent : AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: selected ? AppColors.accent : AppColors.border,
+              ),
+            ),
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: selected ? Colors.white : AppColors.inkSecondary,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkillsPremiumCard extends StatelessWidget {
+  const _SkillsPremiumCard({
+    required this.summary,
+    required this.onTap,
+  });
+
+  final ProofStackSkillSummary summary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final skill = summary.skill;
+    final confidence = summary.confidence;
+    final filled = ConfidenceProgressSegments.filledFor(confidence);
+    final trendStyle = _trendStyle(summary.trend);
+    final bestParts = _splitBest(skill.formattedCurrentBest);
+
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.sports_gymnastics_outlined,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          skill.name,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Current best',
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: AppColors.inkMuted,
+                                  ),
+                        ),
+                        if (bestParts == null)
+                          Text(
+                            '—',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          )
+                        else
+                          RichText(
+                            text: TextSpan(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    color: AppColors.accent,
+                                  ),
+                              children: [
+                                TextSpan(
+                                  text: bestParts.$1,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: ' ${bestParts.$2}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (skill.formattedTarget != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Target: ${skill.formattedTarget}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: AppColors.inkMuted,
+                                ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _RightSummaryRail(
+                    confidenceLabel: confidence.label,
+                    filled: filled,
+                    proofCount: summary.totalProofs,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: AppColors.divider, height: 1),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    trendStyle.icon,
+                    size: 16,
+                    color: trendStyle.color,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    trendStyle.label,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: trendStyle.color,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    ProofDateUtils.formatSkillUpdated(summary.lastUpdated),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.inkMuted,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  _TrendStyle _trendStyle(ProofStackTrend trend) {
+    return switch (trend) {
+      ProofStackTrend.improving => const _TrendStyle(
+          icon: Icons.trending_up_rounded,
+          label: 'Improving',
+          color: AppColors.accent,
+        ),
+      ProofStackTrend.stable => const _TrendStyle(
+          icon: Icons.trending_flat_rounded,
+          label: 'Stable',
+          color: AppColors.inkSecondary,
+        ),
+      ProofStackTrend.declining => const _TrendStyle(
+          icon: Icons.trending_down_rounded,
+          label: 'Declining',
+          color: AppColors.error,
+        ),
+      ProofStackTrend.inactive => const _TrendStyle(
+          icon: Icons.schedule_outlined,
+          label: 'Inactive',
+          color: AppColors.inkMuted,
+        ),
+      ProofStackTrend.notEnoughEvidence => const _TrendStyle(
+          icon: Icons.trending_flat_rounded,
+          label: 'Not enough evidence',
+          color: AppColors.inkMuted,
+        ),
+    };
+  }
+
+  (String, String)? _splitBest(String? formatted) {
+    if (formatted == null || formatted.trim().isEmpty) return null;
+    final parts = formatted.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return null;
+    if (parts.length == 1) return (parts.first, '');
+    final value = parts.first;
+    final unit = parts.sublist(1).join(' ');
+    return (value, unit);
+  }
+}
+
+class _TrendStyle {
+  const _TrendStyle({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+}
+
+class _RightSummaryRail extends StatelessWidget {
+  const _RightSummaryRail({
+    required this.confidenceLabel,
+    required this.filled,
+    required this.proofCount,
+  });
+
+  final String confidenceLabel;
+  final int filled;
+  final int proofCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Confidence',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.inkMuted,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              confidenceLabel,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AppColors.ink,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            ConfidenceBlockProgress(
+              filled: filled,
+              total: ConfidenceProgressSegments.segmentCount,
+              segmentWidth: 10,
+              height: 7,
+              gap: 4,
+            ),
+          ],
+        ),
+        const SizedBox(width: 16),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              '$proofCount',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              proofCount == 1 ? 'Proof' : 'Proofs',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.inkSecondary,
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 8),
+        const Icon(
+          Icons.chevron_right,
+          size: 20,
+          color: AppColors.inkMuted,
+        ),
+      ],
+    );
+  }
+}
+
+class _SkillsTipCard extends StatelessWidget {
+  const _SkillsTipCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: AppColors.accent,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.auto_awesome_outlined,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tip',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Consistency builds trust. Keep adding proofs over time.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.inkSecondary,
+                        height: 1.4,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkillsTrackNewCard extends StatelessWidget {
+  const _SkillsTrackNewCard({required this.onTap});
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.border,
+              style: BorderStyle.solid,
+            ),
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      skill.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  if (skill.status != SkillStatus.active)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Text(
-                        skill.status.label.toUpperCase(),
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                    ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      skill.discipline.toUpperCase(),
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right, color: AppColors.inkMuted, size: 20),
-                ],
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Icon(
+                  Icons.playlist_add_outlined,
+                  color: AppColors.accent,
+                  size: 24,
+                ),
               ),
-              if (skill.formattedCurrentBest != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Current best: ${skill.formattedCurrentBest}',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-              if (skill.formattedTarget != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Target: ${skill.formattedTarget}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-              if (skill.description.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(skill.description, style: Theme.of(context).textTheme.bodyMedium),
-              ],
+              const SizedBox(height: 16),
+              Text(
+                'Track a new capability',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Add a skill to start building your Proof Stack.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.inkSecondary,
+                    ),
+                textAlign: TextAlign.center,
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SkillsEmptyState extends StatelessWidget {
+  const _SkillsEmptyState({required this.onAdd});
+
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceElevated,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Icon(
+              Icons.playlist_add_outlined,
+              color: AppColors.accent,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Track a new capability',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Add a skill to begin building your first Proof Stack.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.inkSecondary,
+                  height: 1.5,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ProofButton(
+            label: '+ Add Skill',
+            onPressed: onAdd,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkillsFooter extends StatelessWidget {
+  const _SkillsFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Divider(color: AppColors.divider),
+        const SizedBox(height: 32),
+        const ProofMotto(),
+        const SizedBox(height: 16),
+        Text(
+          '${AppConstants.appName} · Physical Identity',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: AppColors.inkMuted,
+              ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }

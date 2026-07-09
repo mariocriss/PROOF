@@ -11,9 +11,14 @@ import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class PassportScreen extends ConsumerWidget {
-  const PassportScreen({super.key, required this.handle});
+  const PassportScreen({
+    super.key,
+    required this.handle,
+    this.showBackButton = true,
+  });
 
   final String handle;
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,11 +30,13 @@ class PassportScreen extends ConsumerWidget {
         body: Center(child: CircularProgressIndicator()),
       ),
       error: (e, _) => _PassportScaffold(
+        showBackButton: showBackButton,
         child: Center(child: Text('Error: $e')),
       ),
       data: (identity) {
         if (identity == null) {
           return _PassportScaffold(
+            showBackButton: showBackButton,
             child: const EmptyState(
               title: 'Identity not found',
               message: 'No public passport exists for this handle.',
@@ -39,6 +46,7 @@ class PassportScreen extends ConsumerWidget {
 
         if (!identity.isPublic) {
           return _PassportScaffold(
+            showBackButton: showBackButton,
             child: const EmptyState(
               title: 'Private identity',
               message: 'This physical identity is not publicly visible.',
@@ -46,16 +54,23 @@ class PassportScreen extends ConsumerWidget {
           );
         }
 
-        return _PassportContent(identity: identity);
+        return _PassportContent(
+          identity: identity,
+          showBackButton: showBackButton,
+        );
       },
     );
   }
 }
 
 class _PassportScaffold extends StatelessWidget {
-  const _PassportScaffold({required this.child});
+  const _PassportScaffold({
+    required this.child,
+    this.showBackButton = true,
+  });
 
   final Widget child;
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +78,9 @@ class _PassportScaffold extends StatelessWidget {
       backgroundColor: AppColors.background,
       appBar: ProofAppBar(
         title: 'Passport',
-        leading: BackButton(onPressed: () => context.pop()),
+        leading: showBackButton
+            ? BackButton(onPressed: () => context.pop())
+            : null,
       ),
       body: child,
     );
@@ -71,9 +88,13 @@ class _PassportScaffold extends StatelessWidget {
 }
 
 class _PassportContent extends ConsumerStatefulWidget {
-  const _PassportContent({required this.identity});
+  const _PassportContent({
+    required this.identity,
+    this.showBackButton = true,
+  });
 
   final PhysicalIdentity identity;
+  final bool showBackButton;
 
   @override
   ConsumerState<_PassportContent> createState() => _PassportContentState();
@@ -117,7 +138,9 @@ class _PassportContentState extends ConsumerState<_PassportContent> {
       backgroundColor: AppColors.background,
       appBar: ProofAppBar(
         title: 'Passport',
-        leading: BackButton(onPressed: () => context.pop()),
+        leading: widget.showBackButton
+            ? BackButton(onPressed: () => context.pop())
+            : null,
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),

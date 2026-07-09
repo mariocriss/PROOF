@@ -61,18 +61,17 @@ class ProofStackSkillSummary {
     return ProofStackSkillSummary(
       skill: skill,
       proofs: sortedProofs,
-      confidence: skill.stackConfidence ??
-          ProofStackCalculator.calculate(sortedProofs),
+      confidence: ProofStackCalculator.calculate(sortedProofs),
       trend: _calculateTrend(
         skill: skill,
         proofs: sortedProofs,
         now: clock(),
       ),
       selfReportedCount: sortedProofs
-          .where((p) => p.proofSource == ProofSource.selfReported)
+          .where((p) => !p.isCoachVerifiedForStack)
           .length,
       coachVerifiedCount: sortedProofs
-          .where((p) => p.proofSource == ProofSource.coach)
+          .where((p) => p.isCoachVerifiedForStack)
           .length,
       lastUpdated:
           sortedProofs.isEmpty ? null : sortedProofs.first.recordedAt,
@@ -262,8 +261,8 @@ class SkillProofStackDetail {
         );
       }
 
-      if (proof.proofSource == ProofSource.coach &&
-          !priorSkillProofs.any((p) => p.proofSource == ProofSource.coach)) {
+      if (proof.isCoachVerifiedForStack &&
+          !priorSkillProofs.any((p) => p.isCoachVerifiedForStack)) {
         milestones.add(
           SkillStackMilestone(
             title: 'First coach verification',

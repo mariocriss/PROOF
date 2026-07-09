@@ -14,7 +14,10 @@ import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/skill_status.dart';
+import 'package:proof/shared/models/relationship_model.dart';
+import 'package:proof/shared/models/verification_status.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/people_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 import 'package:proof/shared/widgets/readonly_fields.dart';
 import 'package:proof/shared/widgets/unit_selector.dart';
@@ -146,7 +149,7 @@ class _ProofCard extends ConsumerWidget {
                 ),
               ),
               ConfidenceBadge(
-                label: proof.proofSource.label,
+                label: proof.verificationLabel,
                 color: AppColors.accent,
               ),
               IconButton(
@@ -202,6 +205,7 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   late String _selectedUnit;
   DateTime? _recordedAt;
   ProofSource _proofSource = ProofSource.selfReported;
+  String? _selectedCoachId;
   File? _mediaFile;
   bool _isLoading = false;
 
@@ -266,6 +270,13 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
       return;
     }
 
+    if (_proofSource == ProofSource.coach && _selectedCoachId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a coach')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -292,6 +303,13 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
 
       final title = ResultFormatter.display(resultRaw, unit);
 
+      final verificationStatus = _proofSource == ProofSource.coach
+          ? VerificationStatus.pendingVerification
+          : VerificationStatus.selfReported;
+      final storedSource = _proofSource == ProofSource.coach
+          ? ProofSource.selfReported
+          : _proofSource;
+
       final proof = ProofModel(
         id: proofId,
         userId: user.uid,
@@ -302,7 +320,9 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         notes: _notesController.text.trim(),
         location: _locationController.text.trim(),
         mediaUrl: mediaUrl,
-        proofSource: _proofSource,
+        proofSource: storedSource,
+        verificationStatus: verificationStatus,
+        coachId: _selectedCoachId,
         recordedAt: recordedAt,
         createdAt: DateTime.now(),
         originalResult: resultRaw,
@@ -310,7 +330,11 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         normalizedValue: normalized.normalizedValue,
       );
 
-      await ref.read(firestoreServiceProvider).addProof(proof);
+      await ref.read(firestoreServiceProvider).addProofWithVerification(
+            proof: proof,
+            coachId: _selectedCoachId,
+            verificationMessage: _notesController.text.trim(),
+          );
       if (!mounted) return;
 
       if (widget.isFirstProof) {
@@ -326,6 +350,11 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   @override
   Widget build(BuildContext context) {
     final skillsAsync = ref.watch(skillsProvider);
+    final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+    final userId = ref.watch(authStateProvider).valueOrNull?.uid;
+    final connectedCoaches = userId == null
+        ? <RelationshipModel>[]
+        : myCoaches(relationships, userId);
 
     return Scaffold(
       appBar: ProofAppBar(
@@ -464,8 +493,12 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                         return ChoiceChip(
                           label: Text(source.label),
                           selected: selected,
-                          onSelected: (_) =>
-                              setState(() => _proofSource = source),
+                          onSelected: (_) => setState(() {
+                            _proofSource = source;
+                            if (source != ProofSource.coach) {
+                              _selectedCoachId = null;
+                            }
+                          }),
                           selectedColor: AppColors.accent.withValues(alpha: 0.15),
                           labelStyle: TextStyle(
                             color: selected ? AppColors.accent : AppColors.inkSecondary,
@@ -474,6 +507,33 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                         );
                       }).toList(),
                     ),
+                    if (_proofSource == ProofSource.coach) ...[
+                      const SizedBox(height: 16),
+                      if (connectedCoaches.isEmpty)
+                        Text(
+                          'Connect with a coach in More → Coaches before requesting verification.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.inkSecondary,
+                              ),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          initialValue: _selectedCoachId,
+                          decoration: const InputDecoration(
+                            labelText: 'Select coach',
+                          ),
+                          items: connectedCoaches
+                              .map(
+                                (link) => DropdownMenuItem(
+                                  value: link.toUserId,
+                                  child: _CoachOptionLabel(coachId: link.toUserId),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) =>
+                              setState(() => _selectedCoachId = value),
+                        ),
+                    ],
                     const SizedBox(height: 24),
                     ProofTextField(
                       controller: _locationController,
@@ -510,6 +570,22 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _CoachOptionLabel extends ConsumerWidget {
+  const _CoachOptionLabel({required this.coachId});
+
+  final String coachId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final identityAsync = ref.watch(identityByUserIdProvider(coachId));
+    return identityAsync.when(
+      loading: () => const Text('Coach'),
+      error: (_, __) => const Text('Coach'),
+      data: (identity) => Text(identity?.displayName ?? 'Coach'),
     );
   }
 }

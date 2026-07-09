@@ -74,7 +74,7 @@ class _CreateIdentityScreenState extends ConsumerState<CreateIdentityScreen> {
         updatedAt: now,
       ));
 
-      if (mounted) context.go('/profile');
+      if (mounted) context.go('/dashboard');
     } on FirebaseException catch (e) {
       setState(() => _error = _mapFirestoreError(e));
     } catch (e) {

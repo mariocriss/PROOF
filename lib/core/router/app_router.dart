@@ -1,14 +1,26 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/features/auth/presentation/auth_screens.dart';
+import 'package:proof/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:proof/features/identity/presentation/identity_screens.dart';
+import 'package:proof/features/account/presentation/account_screens.dart';
+import 'package:proof/features/coach_tools/presentation/coach_tools_screens.dart';
+import 'package:proof/features/coaches/presentation/coach_profile_screen.dart';
+import 'package:proof/features/coaches/presentation/coaches_screen.dart';
+import 'package:proof/features/friends/presentation/friends_screen.dart';
+import 'package:proof/features/gyms/presentation/gyms_screen.dart';
+import 'package:proof/features/people/presentation/request_screens.dart';
+import 'package:proof/features/more/presentation/more_screen.dart';
+import 'package:proof/features/passport/presentation/my_passport_tab.dart';
+import 'package:proof/features/passport/presentation/passport_screen.dart';
 import 'package:proof/features/proof_stack/presentation/proof_stack_screen.dart';
 import 'package:proof/features/proof_stack/presentation/skill_proof_stack_screen.dart';
 import 'package:proof/features/proofs/presentation/proofs_screens.dart';
-import 'package:proof/features/skills/presentation/skills_screens.dart';
-import 'package:proof/features/passport/presentation/passport_screen.dart';
 import 'package:proof/features/settings/presentation/settings_screens.dart';
+import 'package:proof/features/shell/presentation/app_shell.dart';
+import 'package:proof/features/skills/presentation/skills_screens.dart';
 import 'package:proof/features/timeline/presentation/timeline_screens.dart';
+import 'package:proof/features/verification/presentation/verification_requests_screen.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -27,14 +39,19 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       final isAuthRoute = location == '/login' || location == '/register';
       final isCreateIdentity = location == '/create-identity';
-      final isPublicPassport = location.startsWith('/passport/');
+      final isPublicPassport =
+          location.startsWith('/passport/') && location != '/passport';
+
+      if (location == '/profile') {
+        return '/dashboard';
+      }
 
       if (!isAuth && !isAuthRoute && !isPublicPassport) {
         return '/login';
       }
 
       if (isAuth && isAuthRoute) {
-        return '/profile';
+        return '/dashboard';
       }
 
       if (isAuth && !isPublicPassport) {
@@ -48,7 +65,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         }
 
         if (hasIdentity && isCreateIdentity) {
-          return '/profile';
+          return '/dashboard';
         }
       }
 
@@ -69,7 +86,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/profile',
-        builder: (context, state) => const ProfileScreen(),
+        redirect: (_, __) => '/dashboard',
         routes: [
           GoRoute(
             path: 'edit',
@@ -77,20 +94,65 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(
-        path: '/skills',
-        builder: (context, state) => const SkillsScreen(),
-        routes: [
-          GoRoute(
-            path: 'add',
-            builder: (context, state) => const AddSkillScreen(),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return AppShell(navigationShell: navigationShell);
+        },
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/dashboard',
+                builder: (context, state) => const DashboardScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: ':skillId',
-            builder: (context, state) {
-              final skillId = state.pathParameters['skillId']!;
-              return SkillDetailScreen(skillId: skillId);
-            },
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/skills',
+                builder: (context, state) =>
+                    const SkillsScreen(showBackButton: false),
+                routes: [
+                  GoRoute(
+                    path: 'add',
+                    builder: (context, state) => const AddSkillScreen(),
+                  ),
+                  GoRoute(
+                    path: ':skillId',
+                    builder: (context, state) {
+                      final skillId = state.pathParameters['skillId']!;
+                      return SkillDetailScreen(skillId: skillId);
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/timeline',
+                builder: (context, state) =>
+                    const TimelineScreen(showBackButton: false),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/passport',
+                builder: (context, state) => const MyPassportTab(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/more',
+                builder: (context, state) => const MoreScreen(),
+              ),
+            ],
           ),
         ],
       ),
@@ -126,10 +188,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(
-        path: '/timeline',
-        builder: (context, state) => const TimelineScreen(),
-      ),
-      GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
       ),
@@ -140,6 +198,59 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/about',
         builder: (context, state) => const AboutScreen(),
+      ),
+      GoRoute(
+        path: '/friends',
+        builder: (context, state) => const FriendsScreen(),
+      ),
+      GoRoute(
+        path: '/coaches',
+        builder: (context, state) => const CoachesScreen(),
+        routes: [
+          GoRoute(
+            path: ':handle',
+            builder: (context, state) {
+              final handle = state.pathParameters['handle']!;
+              return CoachProfileScreen(handle: handle);
+            },
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/gyms',
+        builder: (context, state) => const GymsScreen(),
+      ),
+      GoRoute(
+        path: '/verification-requests',
+        builder: (context, state) => const VerificationRequestsScreen(),
+      ),
+      GoRoute(
+        path: '/friend-requests',
+        builder: (context, state) => const FriendRequestsScreen(),
+      ),
+      GoRoute(
+        path: '/coach-requests',
+        builder: (context, state) => const CoachRequestsScreen(),
+      ),
+      GoRoute(
+        path: '/account',
+        builder: (context, state) => const AccountScreen(),
+      ),
+      GoRoute(
+        path: '/notifications',
+        builder: (context, state) => const NotificationsScreen(),
+      ),
+      GoRoute(
+        path: '/coach/verification-queue',
+        builder: (context, state) => const CoachVerificationQueueScreen(),
+      ),
+      GoRoute(
+        path: '/coach/athletes',
+        builder: (context, state) => const CoachAthletesScreen(),
+      ),
+      GoRoute(
+        path: '/coach/verified-proofs',
+        builder: (context, state) => const CoachVerifiedProofsScreen(),
       ),
       GoRoute(
         path: '/passport/:handle',

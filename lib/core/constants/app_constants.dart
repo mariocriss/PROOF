@@ -8,4 +8,8 @@ class AppConstants {
   static const int handleMaxLength = 24;
   static const int bioMaxLength = 280;
   static const int displayNameMaxLength = 64;
+
+  static const String passportBaseUrl = 'https://proof.app/passport';
+
+  static String passportUrl(String handle) => '$passportBaseUrl/$handle';
 }

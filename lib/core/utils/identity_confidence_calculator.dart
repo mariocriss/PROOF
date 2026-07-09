@@ -26,8 +26,7 @@ class IdentityConfidenceCalculator {
           proofs.where((p) => p.skillId == skill.id).toList();
       if (skillProofs.isEmpty) continue;
 
-      final confidence = skill.stackConfidence ??
-          ProofStackCalculator.calculate(skillProofs);
+      final confidence = ProofStackCalculator.calculate(skillProofs);
       final weight = skillProofs.length;
       weightedSum += _score(confidence) * weight;
       totalWeight += weight;

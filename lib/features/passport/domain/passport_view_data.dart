@@ -43,8 +43,7 @@ class PassportViewData {
     final skillEntries = activeSkills.map((skill) {
       final skillProofs =
           proofs.where((p) => p.skillId == skill.id).toList();
-      final confidence = skill.stackConfidence ??
-          ProofStackCalculator.calculate(skillProofs);
+      final confidence = ProofStackCalculator.calculate(skillProofs);
       return PassportSkillEntry(
         skill: skill,
         proofCount: skillProofs.length,

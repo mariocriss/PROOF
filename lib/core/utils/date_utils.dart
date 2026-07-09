@@ -21,4 +21,32 @@ class ProofDateUtils {
     if (diff.inDays < 30) return '${(diff.inDays / 7).floor()} weeks ago';
     return formatDate(date);
   }
+
+  static String formatActivityDate(DateTime date) {
+    final now = DateTime.now();
+    final day = DateTime(date.year, date.month, date.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(day).inDays;
+
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return DateFormat('MMM d').format(date);
+  }
+
+  static String formatSkillUpdated(DateTime? date) {
+    if (date == null) return 'Not updated yet';
+
+    final now = DateTime.now();
+    final day = DateTime(date.year, date.month, date.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(day).inDays;
+
+    if (diff == 0) return 'Updated today';
+    if (diff == 1) return 'Updated yesterday';
+    return 'Updated ${formatDate(date)}';
+  }
+
+  static String formatTimelineDate(DateTime date) {
+    return DateFormat('MMM d').format(date);
+  }
 }

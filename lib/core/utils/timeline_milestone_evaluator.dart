@@ -1,7 +1,6 @@
 import 'package:proof/shared/models/confidence_level.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
-import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/timeline_event.dart';
 
@@ -117,8 +116,8 @@ class TimelineMilestoneEvaluator {
       );
     }
 
-    if (proof.proofSource == ProofSource.coach &&
-        !priorProofs.any((p) => p.proofSource == ProofSource.coach)) {
+    if (proof.isCoachVerifiedForStack &&
+        !priorProofs.any((p) => p.isCoachVerifiedForStack)) {
       milestones.add(
         TimelineMilestoneCandidate(
           type: TimelineEventType.coachVerified,

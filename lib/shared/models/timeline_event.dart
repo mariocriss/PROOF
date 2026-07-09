@@ -53,7 +53,7 @@ enum TimelineEventType {
       case TimelineEventType.confidence:
         return Icons.insights_outlined;
       case TimelineEventType.achievement:
-        return Icons.military_tech_outlined;
+        return Icons.star_outline;
     }
   }
 

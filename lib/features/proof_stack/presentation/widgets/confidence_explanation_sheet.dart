@@ -11,12 +11,14 @@ class ConfidenceExplanationSheet extends StatelessWidget {
     required this.proofCount,
     required this.selfReportedCount,
     required this.coachVerifiedCount,
+    this.isIdentityLevel = false,
   });
 
   final StackConfidence confidence;
   final int proofCount;
   final int selfReportedCount;
   final int coachVerifiedCount;
+  final bool isIdentityLevel;
 
   static Future<void> show(
     BuildContext context, {
@@ -24,6 +26,7 @@ class ConfidenceExplanationSheet extends StatelessWidget {
     required int proofCount,
     required int selfReportedCount,
     required int coachVerifiedCount,
+    bool isIdentityLevel = false,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -37,6 +40,7 @@ class ConfidenceExplanationSheet extends StatelessWidget {
         proofCount: proofCount,
         selfReportedCount: selfReportedCount,
         coachVerifiedCount: coachVerifiedCount,
+        isIdentityLevel: isIdentityLevel,
       ),
     );
   }
@@ -47,10 +51,15 @@ class ConfidenceExplanationSheet extends StatelessWidget {
       selfReportedCount: selfReportedCount,
       coachVerifiedCount: coachVerifiedCount,
     );
-    final tips = ConfidenceExplainer.strengthenTips(
-      confidence: confidence,
-      coachVerifiedCount: coachVerifiedCount,
-    );
+    final tips = isIdentityLevel
+        ? ConfidenceExplainer.identityStrengthenTips(
+            confidence: confidence,
+            coachVerifiedCount: coachVerifiedCount,
+          )
+        : ConfidenceExplainer.strengthenTips(
+            confidence: confidence,
+            coachVerifiedCount: coachVerifiedCount,
+          );
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -90,6 +99,7 @@ class ConfidenceExplanationSheet extends StatelessWidget {
                 confidence: confidence,
                 proofCount: proofCount,
                 coachVerifiedCount: coachVerifiedCount,
+                isIdentityLevel: isIdentityLevel,
               ),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: AppColors.inkSecondary,
@@ -98,7 +108,7 @@ class ConfidenceExplanationSheet extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             Text(
-              'CURRENT PROOF STACK',
+              isIdentityLevel ? 'YOUR EVIDENCE' : 'CURRENT PROOF STACK',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     letterSpacing: 1.2,
                     color: AppColors.inkMuted,
@@ -118,7 +128,9 @@ class ConfidenceExplanationSheet extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              'HOW TO STRENGTHEN THIS PROOF STACK',
+              isIdentityLevel
+                  ? 'HOW TO STRENGTHEN YOUR PHYSICAL IDENTITY'
+                  : 'HOW TO STRENGTHEN THIS PROOF STACK',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     letterSpacing: 1.2,
                     color: AppColors.inkMuted,

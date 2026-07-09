@@ -8,7 +8,16 @@ class ConfidenceExplainer {
     required StackConfidence confidence,
     required int proofCount,
     required int coachVerifiedCount,
+    bool isIdentityLevel = false,
   }) {
+    if (isIdentityLevel) {
+      return identityMessage(
+        confidence: confidence,
+        proofCount: proofCount,
+        coachVerifiedCount: coachVerifiedCount,
+      );
+    }
+
     switch (confidence) {
       case StackConfidence.limitedEvidence:
         if (proofCount <= 1) {
@@ -34,6 +43,55 @@ class ConfidenceExplainer {
         return 'This proof stack is trusted.\n\n'
             'Long-term evidence and verification make this one of your most credible claims.';
     }
+  }
+
+  static String identityMessage({
+    required StackConfidence confidence,
+    required int proofCount,
+    required int coachVerifiedCount,
+  }) {
+    switch (confidence) {
+      case StackConfidence.limitedEvidence:
+        if (proofCount <= 1) {
+          return 'Your physical identity has one documented proof.\n\n'
+              'Trust is built through evidence, not claims.';
+        }
+        return 'Your physical identity has limited evidence.\n\n'
+            'Trust is built through evidence, not claims.';
+
+      case StackConfidence.developing:
+        return 'Your physical identity is developing.\n\n'
+            'A pattern of documented performance is beginning to form across your skills.';
+
+      case StackConfidence.established:
+        return 'Your physical identity is established.\n\n'
+            'Multiple proofs across skills support your documented capabilities.';
+
+      case StackConfidence.strong:
+        return 'Your physical identity is strong.\n\n'
+            'Sustained documentation makes your physical claims increasingly credible.';
+
+      case StackConfidence.trusted:
+        return 'Your physical identity is trusted.\n\n'
+            'Long-term evidence and verification make this one of your most credible identities.';
+    }
+  }
+
+  static List<String> identityStrengthenTips({
+    required StackConfidence confidence,
+    required int coachVerifiedCount,
+  }) {
+    final tips = <String>[
+      'Continue documenting proofs across your skills',
+      'Build consistency over time',
+    ];
+    if (coachVerifiedCount == 0) {
+      tips.add('Add coach-verified proofs to strengthen credibility');
+    }
+    if (confidence.index >= StackConfidence.established.index) {
+      tips.add('Maintain evidence across multiple capabilities');
+    }
+    return tips;
   }
 
   static List<String> currentStackLines({

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
+import 'package:proof/shared/models/confidence_level.dart';
 import 'package:proof/shared/models/measurement_type.dart';
 import 'package:proof/shared/models/performance_type.dart';
 import 'package:proof/shared/models/proof_model.dart';
@@ -73,6 +74,33 @@ void main() {
     expect(summary.selfReportedCount, 2);
     expect(summary.coachVerifiedCount, 1);
     expect(summary.trend, ProofStackTrend.improving);
+  });
+
+  test('summary confidence is calculated from proofs, not stale skill cache', () {
+    final staleSkill = skill.copyWith(
+      stackConfidence: StackConfidence.limitedEvidence,
+    );
+    final proofs = [
+      proof(
+        id: 'p1',
+        recordedAt: now.subtract(const Duration(days: 20)),
+        value: 13,
+      ),
+      proof(
+        id: 'p2',
+        recordedAt: now.subtract(const Duration(days: 10)),
+        value: 15,
+      ),
+      proof(id: 'p3', recordedAt: now.subtract(const Duration(days: 2)), value: 16),
+    ];
+
+    final summary = ProofStackSkillSummary.build(
+      skill: staleSkill,
+      proofs: proofs,
+      now: () => now,
+    );
+
+    expect(summary.confidence, StackConfidence.developing);
   });
 
   test('single proof uses not enough evidence trend', () {
