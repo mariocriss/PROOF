@@ -171,7 +171,10 @@ class TimelineEventDetailSheet extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   ConfidenceBlockProgress(
-                    filled: ConfidenceProgressSegments.filledFor(confidence),
+                    filled: ConfidenceProgressSegments.filledFor(
+                      confidence,
+                      proofCount: stackProofs.length,
+                    ),
                     total: ConfidenceProgressSegments.segmentCount,
                     segmentWidth: 10,
                     height: 6,

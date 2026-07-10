@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/app_constants.dart';
 import 'package:proof/core/utils/confidence_progress_segments.dart';
 import 'package:proof/core/utils/date_utils.dart';
-import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/core/theme/app_colors.dart';
@@ -18,6 +17,7 @@ import 'package:proof/shared/models/skill_catalog_entry.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/skill_status.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/people_providers.dart';
 import 'package:proof/shared/widgets/confidence_block_progress.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 import 'package:proof/shared/widgets/unit_selector.dart';
@@ -38,7 +38,7 @@ class _SkillsScreenState extends ConsumerState<SkillsScreen> {
   @override
   Widget build(BuildContext context) {
     final skillsAsync = ref.watch(skillsProvider);
-    final proofsAsync = ref.watch(proofsProvider);
+    final summaries = ref.watch(proofStackSummariesProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -50,11 +50,6 @@ class _SkillsScreenState extends ConsumerState<SkillsScreen> {
             final visibleSkills = skills
                 .where((s) => s.status != SkillStatus.archived)
                 .toList();
-            final proofs = proofsAsync.valueOrNull ?? [];
-            final summaries = ProofStackMerge.buildSummaries(
-              skills: skills,
-              proofs: proofs,
-            );
             final disciplines = List<String>.from(SkillCatalog.disciplines);
             final filteredSummaries = _disciplineFilter == null
                 ? summaries
@@ -321,7 +316,10 @@ class _SkillsPremiumCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final skill = summary.skill;
     final confidence = summary.confidence;
-    final filled = ConfidenceProgressSegments.filledFor(confidence);
+    final filled = ConfidenceProgressSegments.filledFor(
+      confidence,
+      proofCount: summary.totalProofs,
+    );
     final trendStyle = _trendStyle(summary.trend);
     final bestParts = _splitBest(skill.formattedCurrentBest);
 
@@ -1177,22 +1175,6 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 24),
-              Text('Target (optional)', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              ResultInputField(
-                controller: _targetController,
-                measurementType: _measurementType,
-                unit: _targetUnit,
-                label: 'Target',
-              ),
-              const SizedBox(height: 16),
-              UnitSelector(
-                label: 'Target unit',
-                allowedUnits: _allowedUnits,
-                selectedUnit: _targetUnit,
-                onChanged: (u) => setState(() => _targetUnit = u),
-              ),
-              const SizedBox(height: 24),
               Text('First result', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 4),
               Text(
@@ -1214,6 +1196,22 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
                 allowedUnits: _allowedUnits,
                 selectedUnit: _selectedUnit,
                 onChanged: (u) => setState(() => _selectedUnit = u),
+              ),
+              const SizedBox(height: 24),
+              Text('Target (optional)', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              ResultInputField(
+                controller: _targetController,
+                measurementType: _measurementType,
+                unit: _targetUnit,
+                label: 'Target',
+              ),
+              const SizedBox(height: 16),
+              UnitSelector(
+                label: 'Target unit',
+                allowedUnits: _allowedUnits,
+                selectedUnit: _targetUnit,
+                onChanged: (u) => setState(() => _targetUnit = u),
               ),
               const SizedBox(height: 32),
               ProofButton(

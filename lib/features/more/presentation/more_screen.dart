@@ -5,6 +5,7 @@ import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/people/presentation/widgets/people_widgets.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/providers/people_providers.dart';
+import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class MoreScreen extends ConsumerWidget {
   const MoreScreen({super.key});
@@ -176,6 +177,12 @@ class MoreScreen extends ConsumerWidget {
                     onTap: () => context.push('/faq'),
                   ),
                 ],
+              ),
+              const SizedBox(height: 24),
+              ProofButton(
+                label: 'Sign out',
+                isOutlined: true,
+                onPressed: () => ref.read(authServiceProvider).signOut(),
               ),
               const SizedBox(height: 28),
               IdentityBannerCard(onTap: () => context.go('/passport')),

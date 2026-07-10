@@ -199,7 +199,6 @@ class AddProofScreen extends ConsumerStatefulWidget {
 class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notesController = TextEditingController();
-  final _locationController = TextEditingController();
   late final TextEditingController _resultController;
   SkillModel? _selectedSkill;
   late String _selectedUnit;
@@ -222,7 +221,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   @override
   void dispose() {
     _notesController.dispose();
-    _locationController.dispose();
     _resultController.dispose();
     super.dispose();
   }
@@ -318,7 +316,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         result: resultRaw,
         unit: unit,
         notes: _notesController.text.trim(),
-        location: _locationController.text.trim(),
         mediaUrl: mediaUrl,
         proofSource: storedSource,
         verificationStatus: verificationStatus,
@@ -535,12 +532,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                         ),
                     ],
                     const SizedBox(height: 24),
-                    ProofTextField(
-                      controller: _locationController,
-                      label: 'Location',
-                      hint: 'Optional — e.g. Amsterdam, HYROX Rotterdam',
-                    ),
-                    const SizedBox(height: 16),
                     ProofTextField(
                       controller: _notesController,
                       label: 'Personal notes',

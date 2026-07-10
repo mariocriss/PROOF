@@ -61,7 +61,10 @@ class PassportCredentialViewData {
       proofsCount: proofs.length,
       coachVerifiedCount:
           proofs.where((p) => p.isCoachVerifiedForStack).length,
-      filledSegments: ConfidenceProgressSegments.filledFor(confidence),
+      filledSegments: ConfidenceProgressSegments.filledFor(
+        confidence,
+        proofCount: proofs.length,
+      ),
       trustIndicators: PassportTrustIndicators.build(
         identity: identity,
         proofs: proofs,

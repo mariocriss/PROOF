@@ -487,7 +487,10 @@ class _FocusSkillCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final skill = summary.skill;
     final confidence = summary.confidence;
-    final filled = DashboardViewData.focusFilledSegments(confidence);
+    final filled = DashboardViewData.focusFilledSegments(
+      confidence,
+      proofCount: summary.totalProofs,
+    );
 
     return Material(
       color: AppColors.surface,

@@ -34,8 +34,10 @@ class DashboardViewData {
   final ProofStackSkillSummary? focusSkill;
   final List<TimelineEvent> recentActivity;
 
-  int get identityFilledSegments =>
-      ConfidenceProgressSegments.filledFor(identityConfidence);
+  int get identityFilledSegments => ConfidenceProgressSegments.filledFor(
+        identityConfidence,
+        proofCount: proofsCount,
+      );
 
   static const identityTotalSegments = ConfidenceProgressSegments.segmentCount;
 
@@ -93,8 +95,14 @@ class DashboardViewData {
     );
   }
 
-  static int focusFilledSegments(StackConfidence confidence) =>
-      ConfidenceProgressSegments.filledFor(confidence);
+  static int focusFilledSegments(
+    StackConfidence confidence, {
+    required int proofCount,
+  }) =>
+      ConfidenceProgressSegments.filledFor(
+        confidence,
+        proofCount: proofCount,
+      );
 
   static const focusTotalSegments = ConfidenceProgressSegments.segmentCount;
 }

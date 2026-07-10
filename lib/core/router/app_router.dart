@@ -17,6 +17,7 @@ import 'package:proof/features/proof_stack/presentation/proof_stack_screen.dart'
 import 'package:proof/features/proof_stack/presentation/skill_proof_stack_screen.dart';
 import 'package:proof/features/proofs/presentation/proofs_screens.dart';
 import 'package:proof/features/settings/presentation/settings_screens.dart';
+import 'package:proof/features/shell/presentation/deferred_shell_tab.dart';
 import 'package:proof/features/shell/presentation/app_shell.dart';
 import 'package:proof/features/skills/presentation/skills_screens.dart';
 import 'package:proof/features/timeline/presentation/timeline_screens.dart';
@@ -103,7 +104,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/dashboard',
-                builder: (context, state) => const DashboardScreen(),
+                builder: (context, state) => DeferredShellTab(
+                  tabIndex: 0,
+                  builder: (_, __) => const DashboardScreen(),
+                ),
               ),
             ],
           ),
@@ -111,8 +115,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/skills',
-                builder: (context, state) =>
-                    const SkillsScreen(showBackButton: false),
+                builder: (context, state) => DeferredShellTab(
+                  tabIndex: 1,
+                  builder: (_, __) =>
+                      const SkillsScreen(showBackButton: false),
+                ),
                 routes: [
                   GoRoute(
                     path: 'add',
@@ -133,8 +140,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/timeline',
-                builder: (context, state) =>
-                    const TimelineScreen(showBackButton: false),
+                builder: (context, state) => DeferredShellTab(
+                  tabIndex: 2,
+                  builder: (_, __) =>
+                      const TimelineScreen(showBackButton: false),
+                ),
               ),
             ],
           ),
@@ -142,7 +152,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/passport',
-                builder: (context, state) => const MyPassportTab(),
+                builder: (context, state) => DeferredShellTab(
+                  tabIndex: 3,
+                  builder: (_, __) => const MyPassportTab(),
+                ),
               ),
             ],
           ),
@@ -150,7 +163,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/more',
-                builder: (context, state) => const MoreScreen(),
+                builder: (context, state) => DeferredShellTab(
+                  tabIndex: 4,
+                  builder: (_, __) => const MoreScreen(),
+                ),
               ),
             ],
           ),

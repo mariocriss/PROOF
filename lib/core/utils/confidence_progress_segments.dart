@@ -5,7 +5,12 @@ class ConfidenceProgressSegments {
 
   static const segmentCount = 8;
 
-  static int filledFor(StackConfidence confidence) {
+  static int filledFor(
+    StackConfidence confidence, {
+    required int proofCount,
+  }) {
+    if (proofCount <= 0) return 0;
+
     return switch (confidence) {
       StackConfidence.limitedEvidence => 2,
       StackConfidence.developing => 4,

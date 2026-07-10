@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
+import 'package:proof/shared/providers/shell_providers.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
-  void _onTap(int index) {
+  void _onTap(int index, WidgetRef ref) {
+    ref.read(activeShellTabIndexProvider.notifier).state = index;
     navigationShell.goBranch(
       index,
       initialLocation: index == navigationShell.currentIndex,
@@ -15,13 +18,22 @@ class AppShell extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentIndex = navigationShell.currentIndex;
+    if (ref.read(activeShellTabIndexProvider) != currentIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (ref.read(activeShellTabIndexProvider) != currentIndex) {
+          ref.read(activeShellTabIndexProvider.notifier).state = currentIndex;
+        }
+      });
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: _onTap,
+        selectedIndex: currentIndex,
+        onDestinationSelected: (index) => _onTap(index, ref),
         backgroundColor: AppColors.surface,
         indicatorColor: AppColors.surfaceElevated,
         destinations: const [

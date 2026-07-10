@@ -1,28 +1,38 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
+import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/shared/models/coach_profile.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/relationship_model.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/shell_providers.dart';
+
+final proofStackSummariesProvider =
+    Provider.autoDispose<List<ProofStackSkillSummary>>((ref) {
+  final skills = ref.watch(skillsProvider).valueOrNull ?? [];
+  final proofs = ref.watch(proofsProvider).valueOrNull ?? [];
+  return ProofStackMerge.buildSummaries(skills: skills, proofs: proofs);
+});
 
 final relationshipsProvider =
-    StreamProvider<List<RelationshipModel>>((ref) {
+    StreamProvider.autoDispose<List<RelationshipModel>>((ref) {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value([]);
   return ref.watch(firestoreServiceProvider).watchRelationshipsForUser(user.uid);
 });
 
-final coachProfilesProvider = StreamProvider<List<CoachProfile>>((ref) {
+final coachProfilesProvider = StreamProvider.autoDispose<List<CoachProfile>>((ref) {
   return ref.watch(firestoreServiceProvider).watchCoachProfiles();
 });
 
 final coachProfileProvider =
-    StreamProvider.family<CoachProfile?, String>((ref, userId) {
+    StreamProvider.autoDispose.family<CoachProfile?, String>((ref, userId) {
   return ref.watch(firestoreServiceProvider).watchCoachProfile(userId);
 });
 
 final verificationRequestsProvider =
-    StreamProvider<List<VerificationRequestModel>>((ref) {
+    StreamProvider.autoDispose<List<VerificationRequestModel>>((ref) {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value([]);
   return ref
@@ -31,7 +41,7 @@ final verificationRequestsProvider =
 });
 
 final coachVerificationQueueProvider =
-    StreamProvider<List<VerificationRequestModel>>((ref) {
+    StreamProvider.autoDispose<List<VerificationRequestModel>>((ref) {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value([]);
   return ref
@@ -40,14 +50,15 @@ final coachVerificationQueueProvider =
 });
 
 final coachVerifiedProofsProvider =
-    StreamProvider.family<List<VerificationRequestModel>, String>((ref, coachId) {
+    StreamProvider.autoDispose.family<List<VerificationRequestModel>, String>(
+        (ref, coachId) {
   return ref
       .watch(firestoreServiceProvider)
       .watchApprovedVerificationsForCoach(coachId);
 });
 
 final coachApprovedVerificationsProvider =
-    StreamProvider<List<VerificationRequestModel>>((ref) {
+    StreamProvider.autoDispose<List<VerificationRequestModel>>((ref) {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value([]);
   return ref
@@ -56,7 +67,7 @@ final coachApprovedVerificationsProvider =
 });
 
 final identityByUserIdProvider =
-    FutureProvider.family<PhysicalIdentity?, String>((ref, userId) {
+    FutureProvider.autoDispose.family<PhysicalIdentity?, String>((ref, userId) {
   return ref.watch(firestoreServiceProvider).getIdentity(userId);
 });
 
@@ -78,15 +89,20 @@ class MoreMenuCounts {
   final int coachQueue;
 }
 
-final moreMenuCountsProvider = Provider<MoreMenuCounts>((ref) {
+final moreMenuCountsProvider = Provider.autoDispose<MoreMenuCounts>((ref) {
+  final activeTab = ref.watch(activeShellTabIndexProvider);
+  if (!isShellTabActive(4, activeTab)) return const MoreMenuCounts();
+
   final userId = ref.watch(authStateProvider).valueOrNull?.uid;
   if (userId == null) return const MoreMenuCounts();
 
+  final user = ref.watch(currentUserProvider).valueOrNull;
   final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
   final verificationRequests =
       ref.watch(verificationRequestsProvider).valueOrNull ?? [];
-  final coachQueue =
-      ref.watch(coachVerificationQueueProvider).valueOrNull ?? [];
+  final coachQueue = user?.isCoach == true
+      ? ref.watch(coachVerificationQueueProvider).valueOrNull ?? []
+      : const <VerificationRequestModel>[];
 
   final friends = relationships
       .where(

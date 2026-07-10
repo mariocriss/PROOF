@@ -46,7 +46,7 @@ final currentUserProvider = StreamProvider<UserModel?>((ref) {
   );
 });
 
-final physicalIdentityProvider = StreamProvider<PhysicalIdentity?>((ref) {
+final physicalIdentityProvider = StreamProvider.autoDispose<PhysicalIdentity?>((ref) {
   final authState = ref.watch(authStateProvider);
   return authState.when(
     data: (user) {
@@ -58,28 +58,24 @@ final physicalIdentityProvider = StreamProvider<PhysicalIdentity?>((ref) {
   );
 });
 
-final skillsProvider = StreamProvider<List<SkillModel>>((ref) {
-  final authState = ref.watch(authStateProvider);
-  return authState.when(
-    data: (user) {
-      if (user == null) return Stream.value([]);
-      final service = ref.watch(firestoreServiceProvider);
-      return _skillsWithMerge(service, user.uid);
-    },
-    loading: () => Stream.value([]),
-    error: (_, __) => Stream.value([]),
-  );
+/// Runs one-time migrations per session before data streams attach.
+final dataBootstrapProvider = FutureProvider.family<void, String>((ref, userId) async {
+  final service = ref.read(firestoreServiceProvider);
+  await service.mergeDuplicateSkillsIfNeeded(userId);
+  await service.migrateTimelineIfNeeded(userId);
 });
 
-Stream<List<SkillModel>> _skillsWithMerge(
-  FirestoreService service,
-  String userId,
-) async* {
-  await service.mergeDuplicateSkillsIfNeeded(userId);
-  yield* service.watchSkills(userId);
-}
+final skillsProvider = StreamProvider.autoDispose<List<SkillModel>>((ref) async* {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) {
+    yield [];
+    return;
+  }
+  await ref.watch(dataBootstrapProvider(user.uid).future);
+  yield* ref.watch(firestoreServiceProvider).watchSkills(user.uid);
+});
 
-final proofsProvider = StreamProvider<List<ProofModel>>((ref) {
+final proofsProvider = StreamProvider.autoDispose<List<ProofModel>>((ref) {
   final authState = ref.watch(authStateProvider);
   return authState.when(
     data: (user) {
@@ -91,26 +87,15 @@ final proofsProvider = StreamProvider<List<ProofModel>>((ref) {
   );
 });
 
-final timelineProvider = StreamProvider<List<TimelineEvent>>((ref) {
-  final authState = ref.watch(authStateProvider);
-  return authState.when(
-    data: (user) {
-      if (user == null) return Stream.value([]);
-      final service = ref.watch(firestoreServiceProvider);
-      return _timelineWithMigration(service, user.uid);
-    },
-    loading: () => Stream.value([]),
-    error: (_, __) => Stream.value([]),
-  );
+final timelineProvider = StreamProvider.autoDispose<List<TimelineEvent>>((ref) async* {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) {
+    yield [];
+    return;
+  }
+  await ref.watch(dataBootstrapProvider(user.uid).future);
+  yield* ref.watch(firestoreServiceProvider).watchTimeline(user.uid);
 });
-
-Stream<List<TimelineEvent>> _timelineWithMigration(
-  FirestoreService service,
-  String userId,
-) async* {
-  await service.migrateTimelineIfNeeded(userId);
-  yield* service.watchTimeline(userId);
-}
 
 final publicSkillsProvider =
     StreamProvider.family<List<SkillModel>, String>((ref, userId) {
