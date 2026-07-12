@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/people/presentation/widgets/people_widgets.dart';
+import 'package:proof/shared/models/gym_membership_model.dart';
+import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/gym_providers.dart';
 import 'package:proof/shared/providers/people_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
@@ -15,6 +18,17 @@ class MoreScreen extends ConsumerWidget {
     final identity = ref.watch(physicalIdentityProvider).valueOrNull;
     final user = ref.watch(currentUserProvider).valueOrNull;
     final counts = ref.watch(moreMenuCountsProvider);
+    final memberships = ref.watch(userGymMembershipsProvider).valueOrNull ?? [];
+    final pendingCoachMembership = memberships.where(
+      (m) =>
+          m.membershipType == GymMembershipType.coach &&
+          m.status == GymMembershipStatus.pending,
+    );
+    final approvedCoachMembership = memberships.where(
+      (m) =>
+          m.membershipType == GymMembershipType.coach &&
+          m.status == GymMembershipStatus.approved,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -69,6 +83,56 @@ class MoreScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 28),
+              if (user?.isCoach == true &&
+                  pendingCoachMembership.isNotEmpty &&
+                  approvedCoachMembership.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.hourglass_top_outlined,
+                          color: AppColors.accent,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Waiting for gym approval',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Your coach membership request is pending. You cannot verify proofs until a gym manager approves you.',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: AppColors.inkMuted,
+                                      height: 1.4,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const PeopleSectionLabel(title: 'PEOPLE'),
               MoreMenuCard(
                 children: [
@@ -80,16 +144,9 @@ class MoreScreen extends ConsumerWidget {
                     onTap: () => context.push('/friends'),
                   ),
                   MoreMenuRow(
-                    icon: Icons.verified_user_outlined,
-                    title: 'Coaches',
-                    subtitle: 'Find and connect with coaches',
-                    badge: counts.coaches,
-                    onTap: () => context.push('/coaches'),
-                  ),
-                  MoreMenuRow(
                     icon: Icons.location_city_outlined,
                     title: 'Gyms',
-                    subtitle: 'Explore gyms and communities',
+                    subtitle: 'Membership and coach verification',
                     onTap: () => context.push('/gyms'),
                   ),
                 ],
@@ -101,7 +158,7 @@ class MoreScreen extends ConsumerWidget {
                   MoreMenuRow(
                     icon: Icons.fact_check_outlined,
                     title: 'Verification Requests',
-                    subtitle: 'Proofs waiting for coach review',
+                    subtitle: 'Proofs awaiting coach review',
                     badge: counts.verificationRequests,
                     onTap: () => context.push('/verification-requests'),
                   ),
@@ -112,15 +169,23 @@ class MoreScreen extends ConsumerWidget {
                     badge: counts.friendRequests,
                     onTap: () => context.push('/friend-requests'),
                   ),
-                  MoreMenuRow(
-                    icon: Icons.shield_outlined,
-                    title: 'Coach Requests',
-                    subtitle: 'Coaches who want to connect',
-                    badge: counts.coachRequests,
-                    onTap: () => context.push('/coach-requests'),
-                  ),
                 ],
               ),
+              if (user?.isGymManager == true ||
+                  user?.role == UserRole.gymManager) ...[
+                const SizedBox(height: 24),
+                const PeopleSectionLabel(title: 'GYM MANAGER'),
+                MoreMenuCard(
+                  children: [
+                    MoreMenuRow(
+                      icon: Icons.apartment_outlined,
+                      title: 'Gym Manager',
+                      subtitle: 'Approve athletes and coaches',
+                      onTap: () => context.push('/gym-manager'),
+                    ),
+                  ],
+                ),
+              ],
               if (user?.isCoach == true) ...[
                 const SizedBox(height: 24),
                 const PeopleSectionLabel(title: 'COACH TOOLS'),

@@ -17,6 +17,8 @@ class SkillModel {
     required this.performanceType,
     this.description = '',
     this.catalogId,
+    this.variantId,
+    this.variantName,
     this.currentBest,
     this.currentBestUnit,
     this.normalizedBestValue,
@@ -27,6 +29,8 @@ class SkillModel {
     this.tags = const [],
     this.isFeatured = false,
     this.stackConfidence,
+    this.earnedBadgeIds = const [],
+    this.personalBestCount = 0,
   });
 
   final String id;
@@ -39,6 +43,8 @@ class SkillModel {
   final MeasurementType measurementType;
   final PerformanceType performanceType;
   final String? catalogId;
+  final String? variantId;
+  final String? variantName;
   final String? currentBest;
   final String? currentBestUnit;
   final double? normalizedBestValue;
@@ -49,6 +55,8 @@ class SkillModel {
   final List<String> tags;
   final bool isFeatured;
   final StackConfidence? stackConfidence;
+  final List<String> earnedBadgeIds;
+  final int personalBestCount;
   final DateTime createdAt;
 
   bool get hasMultipleUnits => allowedUnits.length > 1;
@@ -86,6 +94,8 @@ class SkillModel {
         data['performanceType'] as String?,
       ),
       catalogId: data['catalogId'] as String?,
+      variantId: data['variantId'] as String?,
+      variantName: data['variantName'] as String?,
       currentBest: data['currentBest'] as String?,
       currentBestUnit: data['currentBestUnit'] as String?,
       normalizedBestValue: (data['normalizedBestValue'] as num?)?.toDouble() ??
@@ -100,6 +110,9 @@ class SkillModel {
       stackConfidence: data['stackConfidence'] != null
           ? StackConfidence.fromString(data['stackConfidence'] as String?)
           : null,
+      earnedBadgeIds:
+          List<String>.from(data['earnedBadgeIds'] as List? ?? []),
+      personalBestCount: data['personalBestCount'] as int? ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -115,6 +128,8 @@ class SkillModel {
       'measurementType': measurementType.value,
       'performanceType': performanceType.value,
       'catalogId': catalogId,
+      'variantId': variantId,
+      'variantName': variantName,
       'currentBest': currentBest,
       'currentBestUnit': currentBestUnit,
       'normalizedBestValue': normalizedBestValue,
@@ -125,6 +140,8 @@ class SkillModel {
       'tags': tags,
       'isFeatured': isFeatured,
       'stackConfidence': stackConfidence?.value,
+      'earnedBadgeIds': earnedBadgeIds,
+      'personalBestCount': personalBestCount,
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
@@ -135,6 +152,10 @@ class SkillModel {
     double? normalizedBestValue,
     SkillStatus? status,
     StackConfidence? stackConfidence,
+    String? targetValue,
+    String? targetUnit,
+    List<String>? earnedBadgeIds,
+    int? personalBestCount,
   }) {
     return SkillModel(
       id: id,
@@ -147,16 +168,20 @@ class SkillModel {
       measurementType: measurementType,
       performanceType: performanceType,
       catalogId: catalogId,
+      variantId: variantId,
+      variantName: variantName,
       currentBest: currentBest ?? this.currentBest,
       currentBestUnit: currentBestUnit ?? this.currentBestUnit,
       normalizedBestValue: normalizedBestValue ?? this.normalizedBestValue,
-      targetValue: targetValue,
-      targetUnit: targetUnit,
+      targetValue: targetValue ?? this.targetValue,
+      targetUnit: targetUnit ?? this.targetUnit,
       status: status ?? this.status,
       aliases: aliases,
       tags: tags,
       isFeatured: isFeatured,
       stackConfidence: stackConfidence ?? this.stackConfidence,
+      earnedBadgeIds: earnedBadgeIds ?? this.earnedBadgeIds,
+      personalBestCount: personalBestCount ?? this.personalBestCount,
       createdAt: createdAt,
     );
   }

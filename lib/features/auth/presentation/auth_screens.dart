@@ -7,6 +7,7 @@ import 'package:proof/core/constants/app_constants.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/validators.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/models/user_model.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
@@ -43,6 +44,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             email: _emailController.text,
             password: _passwordController.text,
           );
+      final user = ref.read(authServiceProvider).currentUser;
+      if (user != null) {
+        await ref.read(firestoreServiceProvider).ensureUserDocument(
+              userId: user.uid,
+              email: user.email ?? _emailController.text.trim(),
+            );
+      }
     } on FirebaseAuthException catch (e) {
       setState(() => _error = ref.read(authServiceProvider).mapAuthError(e));
     } catch (_) {
@@ -118,6 +126,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onPressed: () => context.go('/register'),
                   child: const Text('Create an account'),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  'Already started setup? Sign in to continue onboarding.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.inkMuted,
+                      ),
+                ),
               ],
             ),
           ),
@@ -158,23 +174,30 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     });
 
     try {
-      final auth = ref.read(authServiceProvider);
+      final signup = ref.read(signupServiceProvider);
       final firestore = ref.read(firestoreServiceProvider);
 
-      final credential = await auth.signUp(
+      final credential = await signup.createAccount(
         email: _emailController.text,
         password: _passwordController.text,
       );
 
       final now = DateTime.now();
-      await firestore.createUser(UserModel(
-        id: credential.user!.uid,
-        email: _emailController.text.trim(),
-        createdAt: now,
-        updatedAt: now,
-      ));
+      try {
+        await firestore.createUser(UserModel(
+          id: credential.user!.uid,
+          email: _emailController.text.trim(),
+          createdAt: now,
+          updatedAt: now,
+          onboardingCompleted: false,
+          onboardingStep: OnboardingStep.chooseAccountType,
+        ));
+      } catch (e) {
+        await credential.user?.delete();
+        rethrow;
+      }
     } on FirebaseAuthException catch (e) {
-      setState(() => _error = ref.read(authServiceProvider).mapAuthError(e));
+      setState(() => _error = e.message ?? ref.read(authServiceProvider).mapAuthError(e));
     } on FirebaseException catch (e) {
       setState(() {
         _error = e.code == 'permission-denied'
@@ -211,7 +234,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Start building your physical identity.',
+                  'Create your PROOF account.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 32),
@@ -224,6 +247,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     ),
                     child: Text(_error!, style: const TextStyle(color: AppColors.error)),
                   ),
+                  if (_error!.contains('already registered')) ...[
+                    const SizedBox(height: 12),
+                    ProofButton(
+                      label: 'Sign in instead',
+                      isOutlined: true,
+                      onPressed: () => context.go('/login'),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                 ],
                 ProofTextField(

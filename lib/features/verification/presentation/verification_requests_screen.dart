@@ -42,9 +42,11 @@ class _VerificationRequestTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusLabel = switch (request.status) {
-      VerificationRequestStatus.pending => 'Pending review',
+      VerificationRequestStatus.pending => 'Awaiting coach review',
       VerificationRequestStatus.approved => 'Approved',
-      VerificationRequestStatus.rejected => 'Rejected',
+      VerificationRequestStatus.declined => 'Declined',
+      VerificationRequestStatus.rejected => 'Declined',
+      VerificationRequestStatus.cancelled => 'Cancelled',
     };
 
     return Container(
@@ -80,10 +82,10 @@ class _VerificationRequestTile extends StatelessWidget {
                   color: AppColors.inkMuted,
                 ),
           ),
-          if (request.rejectionNote.isNotEmpty) ...[
+          if (request.displayDeclineReason.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              'Note: ${request.rejectionNote}',
+              'Note: ${request.displayDeclineReason}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

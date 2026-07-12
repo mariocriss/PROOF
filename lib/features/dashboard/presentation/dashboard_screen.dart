@@ -7,6 +7,7 @@ import 'package:proof/features/dashboard/domain/dashboard_view_data.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/features/proof_stack/presentation/widgets/confidence_explanation_sheet.dart';
 import 'package:proof/shared/models/timeline_event.dart';
+import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/widgets/confidence_block_progress.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
@@ -16,7 +17,9 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(verificationStackSyncProvider);
     final identityAsync = ref.watch(physicalIdentityProvider);
+    final user = ref.watch(currentUserProvider).valueOrNull;
     final skillsAsync = ref.watch(skillsProvider);
     final proofsAsync = ref.watch(proofsProvider);
     final timelineAsync = ref.watch(timelineProvider);
@@ -32,9 +35,37 @@ class DashboardScreen extends ConsumerWidget {
       ),
       data: (identity) {
         if (identity == null) {
-          return const Scaffold(
+          if (user?.isGymManager == true) {
+            final gymId = user?.managedGymIds.firstOrNull ?? user?.primaryGymId;
+            if (gymId != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (context.mounted) context.go('/gym-manager/$gymId');
+              });
+            }
+            return const Scaffold(
+              backgroundColor: AppColors.background,
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          return Scaffold(
             backgroundColor: AppColors.background,
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Complete your profile to use the dashboard.'),
+                    const SizedBox(height: 16),
+                    ProofButton(
+                      label: 'Continue setup',
+                      onPressed: () => context.go('/onboarding/account-type'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
 

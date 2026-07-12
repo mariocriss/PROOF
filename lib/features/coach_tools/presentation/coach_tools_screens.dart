@@ -5,6 +5,7 @@ import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/date_utils.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/gym_providers.dart';
 import 'package:proof/shared/providers/people_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
@@ -72,6 +73,21 @@ class _QueueCard extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               Text(request.resultLabel),
+              if (request.variantName.isNotEmpty)
+                Text(
+                  request.variantName,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.inkMuted,
+                      ),
+                ),
+              if (request.location.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Location: ${request.location}'),
+              ],
+              if (request.gymId.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                _GymLabel(gymId: request.gymId),
+              ],
               const SizedBox(height: 4),
               Text(
                 ProofDateUtils.formatRelative(
@@ -118,7 +134,7 @@ class _QueueCard extends ConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ProofButton(
-                      label: 'Reject',
+                      label: 'Decline',
                       isOutlined: true,
                       onPressed: () => _reject(context, ref),
                     ),
@@ -162,10 +178,35 @@ class _QueueCard extends ConsumerWidget {
 
     if (note == null) return;
 
+    final coachId = ref.read(authStateProvider).valueOrNull?.uid;
+    if (coachId == null) return;
+
     await ref.read(firestoreServiceProvider).rejectVerificationRequest(
           requestId: request.id,
           rejectionNote: note,
+          coachId: coachId,
         );
+  }
+}
+
+class _GymLabel extends ConsumerWidget {
+  const _GymLabel({required this.gymId});
+
+  final String gymId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gymAsync = ref.watch(gymProvider(gymId));
+    return gymAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (gym) => Text(
+        gym?.name ?? 'Gym',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppColors.inkMuted,
+            ),
+      ),
+    );
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:proof/core/utils/skill_display_name.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/date_utils.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
@@ -69,7 +70,7 @@ class SkillProofStackScreen extends ConsumerWidget {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: ProofAppBar(
-            title: primary.name,
+            title: SkillDisplayName.format(primary),
             leading: BackButton(onPressed: () => context.pop()),
           ),
           floatingActionButton: FloatingActionButton.extended(
@@ -193,11 +194,18 @@ class _TrustHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          skill.name,
+          SkillDisplayName.format(skill),
           style: Theme.of(context).textTheme.displaySmall?.copyWith(
                 color: AppColors.ink,
                 letterSpacing: -0.6,
                 fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          SkillDisplayName.stackLabel(skill, detail.summary.totalProofs),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppColors.inkMuted,
               ),
         ),
         if (skill.formattedCurrentBest != null) ...[

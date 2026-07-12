@@ -1,6 +1,6 @@
 enum ProofSource {
   selfReported('self_reported', 'Self Reported'),
-  coach('coach', 'Coach Verified');
+  coach('coach', 'Request Coach Verification');
 
   const ProofSource(this.value, this.label);
 

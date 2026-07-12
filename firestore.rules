@@ -6,10 +6,95 @@ service cloud.firestore {
         .data.isPublic == true;
     }
 
+    function membershipDocId(gymId, userId, membershipType) {
+      return gymId + '_' + userId + '_' + membershipType;
+    }
+
+    function ownsMembershipDoc(membershipId) {
+      return request.auth != null
+        && membershipId.matches('.*_' + request.auth.uid + '_(athlete|coach|manager)$');
+    }
+
+    function isApprovedAthleteAtGym(gymId) {
+      let id = membershipDocId(gymId, request.auth.uid, 'athlete');
+      return exists(/databases/$(database)/documents/gymMemberships/$(id))
+        && get(/databases/$(database)/documents/gymMemberships/$(id)).data.status == 'approved';
+    }
+
+    function isApprovedCoachAtGym(gymId) {
+      return isApprovedCoachAtGymForUser(gymId, request.auth.uid);
+    }
+
+    function isApprovedCoachAtGymForUser(gymId, userId) {
+      let id = membershipDocId(gymId, userId, 'coach');
+      return exists(/databases/$(database)/documents/gymMemberships/$(id))
+        && get(/databases/$(database)/documents/gymMemberships/$(id)).data.status == 'approved';
+    }
+
+    function canReadGymMembership(membershipId) {
+      return request.auth != null && (
+        resource.data.userId == request.auth.uid
+        || ownsMembershipDoc(membershipId)
+        || (resource.data.gymId is string && canManageGym(resource.data.gymId))
+        || (resource.data.gymId is string
+          && isApprovedAthleteAtGym(resource.data.gymId))
+      );
+    }
+
+    function athleteMarksVerificationStackResynced() {
+      return request.auth != null
+        && resource.data.athleteId == request.auth.uid
+        && resource.data.stackResynced != true
+        && request.resource.data.stackResynced == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stackResynced']);
+    }
+
+    function coachAssignedToAthleteProof(athleteId, proofId) {
+      return request.auth != null
+        && proofId is string
+        && proofId.size() > 0
+        && exists(/databases/$(database)/documents/users/$(athleteId)/proofs/$(proofId))
+        && get(/databases/$(database)/documents/users/$(athleteId)/proofs/$(proofId)).data.coachId == request.auth.uid;
+    }
+
+    function isGymManager(gymId) {
+      let id = membershipDocId(gymId, request.auth.uid, 'manager');
+      return exists(/databases/$(database)/documents/gymMemberships/$(id))
+        && get(/databases/$(database)/documents/gymMemberships/$(id)).data.status == 'approved';
+    }
+
+    function isGymCreator(gymId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/gyms/$(gymId))
+        && get(/databases/$(database)/documents/gyms/$(gymId)).data.createdBy == request.auth.uid;
+    }
+
+    function canManageGym(gymId) {
+      return isGymManager(gymId) || isGymCreator(gymId);
+    }
+
+    function isPendingMembershipRequest() {
+      return request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.gymId is string
+        && request.resource.data.gymId.size() > 0
+        && request.resource.data.membershipType in ['athlete', 'coach'];
+    }
+
+    function isManagerBootstrap() {
+      return request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.membershipType == 'manager'
+        && request.resource.data.status == 'approved'
+        && request.resource.data.gymId is string
+        && request.resource.data.gymId.size() > 0;
+    }
+
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
 
       match /identity/{docId} {
         allow read: if isPublicIdentity(userId)
@@ -40,7 +125,13 @@ service cloud.firestore {
       match /timeline/{eventId} {
         allow read: if isPublicIdentity(userId)
           || (request.auth != null && request.auth.uid == userId);
-        allow write: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && (
+          request.auth.uid == userId
+          || (request.resource.data.type == 'coach_verified'
+            && request.resource.data.referenceId is string
+            && coachAssignedToAthleteProof(userId, request.resource.data.referenceId))
+        );
+        allow update, delete: if request.auth != null && request.auth.uid == userId;
       }
     }
 
@@ -51,13 +142,48 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
+    match /gymHandles/{handle} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.gymId is string
+        && get(/databases/$(database)/documents/gyms/$(resource.data.gymId)).data.createdBy == request.auth.uid;
+    }
+
+    match /gyms/{gymId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if request.auth != null && canManageGym(gymId);
+      allow delete: if request.auth != null
+        && resource.data.createdBy == request.auth.uid;
+    }
+
+    match /gymMemberships/{membershipId} {
+      allow read: if canReadGymMembership(membershipId);
+      allow create: if request.auth != null && (
+        (ownsMembershipDoc(membershipId) && isPendingMembershipRequest())
+        || (ownsMembershipDoc(membershipId) && isManagerBootstrap())
+      );
+      allow update: if request.auth != null && (
+        (resource.data.gymId is string && canManageGym(resource.data.gymId))
+        || (ownsMembershipDoc(membershipId)
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.status == 'removed')
+        || (ownsMembershipDoc(membershipId) && isPendingMembershipRequest())
+      );
+      allow delete: if ownsMembershipDoc(membershipId);
+    }
+
     match /relationships/{relationshipId} {
       allow read: if request.auth != null && (
         resource.data.fromUserId == request.auth.uid
         || resource.data.toUserId == request.auth.uid
       );
       allow create: if request.auth != null
-        && request.resource.data.fromUserId == request.auth.uid;
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.type == 'friend';
       allow update: if request.auth != null && (
         resource.data.fromUserId == request.auth.uid
         || resource.data.toUserId == request.auth.uid
@@ -70,14 +196,28 @@ service cloud.firestore {
         || resource.data.coachId == request.auth.uid
       );
       allow create: if request.auth != null
-        && request.resource.data.athleteId == request.auth.uid;
-      allow update: if request.auth != null
-        && resource.data.coachId == request.auth.uid;
+        && request.resource.data.athleteId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.gymId is string
+        && request.resource.data.coachId is string
+        && isApprovedAthleteAtGym(request.resource.data.gymId)
+        && isApprovedCoachAtGymForUser(
+          request.resource.data.gymId,
+          request.resource.data.coachId
+        );
+      allow update: if request.auth != null && (
+        (
+          resource.data.coachId == request.auth.uid
+          && resource.data.status == 'pending'
+          && isApprovedCoachAtGym(resource.data.gymId)
+        )
+        || athleteMarksVerificationStackResynced()
+      );
     }
 
     match /coachProfiles/{userId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write, delete: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

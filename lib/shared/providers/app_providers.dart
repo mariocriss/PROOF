@@ -8,6 +8,7 @@ import 'package:proof/shared/models/timeline_event.dart';
 import 'package:proof/shared/models/user_model.dart';
 import 'package:proof/shared/services/auth_service.dart';
 import 'package:proof/shared/services/firestore_service.dart';
+import 'package:proof/shared/services/signup_service.dart';
 import 'package:proof/shared/services/storage_service.dart';
 
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -23,7 +24,17 @@ final authServiceProvider = Provider<AuthService>((ref) {
 });
 
 final firestoreServiceProvider = Provider<FirestoreService>((ref) {
-  return FirestoreService(ref.watch(firestoreProvider));
+  return FirestoreService(
+    ref.watch(firestoreProvider),
+    ref.watch(firebaseAuthProvider),
+  );
+});
+
+final signupServiceProvider = Provider<SignupService>((ref) {
+  return SignupService(
+    auth: ref.watch(authServiceProvider),
+    firestore: ref.watch(firestoreServiceProvider),
+  );
 });
 
 final storageServiceProvider = Provider<StorageService>((ref) {
@@ -34,16 +45,25 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authServiceProvider).authStateChanges;
 });
 
-final currentUserProvider = StreamProvider<UserModel?>((ref) {
+final currentUserProvider = StreamProvider<UserModel?>((ref) async* {
   final authState = ref.watch(authStateProvider);
-  return authState.when(
-    data: (user) {
-      if (user == null) return Stream.value(null);
-      return ref.watch(firestoreServiceProvider).watchUser(user.uid);
-    },
-    loading: () => Stream.value(null),
-    error: (_, __) => Stream.value(null),
-  );
+  final user = authState.valueOrNull;
+  if (user == null) {
+    yield null;
+    return;
+  }
+  final service = ref.watch(firestoreServiceProvider);
+  await service.migrateOnboardingIfNeeded(user.uid);
+  yield* service.watchUser(user.uid);
+});
+
+/// Runs once per session to sync proof stacks after coach verification decisions.
+final verificationStackSyncProvider = FutureProvider<void>((ref) async {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) return;
+  await ref.read(firestoreServiceProvider).syncVerificationStacksForAthlete(
+        user.uid,
+      );
 });
 
 final physicalIdentityProvider = StreamProvider.autoDispose<PhysicalIdentity?>((ref) {
@@ -63,6 +83,7 @@ final dataBootstrapProvider = FutureProvider.family<void, String>((ref, userId) 
   final service = ref.read(firestoreServiceProvider);
   await service.mergeDuplicateSkillsIfNeeded(userId);
   await service.migrateTimelineIfNeeded(userId);
+  await service.migrateOnboardingIfNeeded(userId);
 });
 
 final skillsProvider = StreamProvider.autoDispose<List<SkillModel>>((ref) async* {

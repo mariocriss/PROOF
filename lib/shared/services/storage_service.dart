@@ -17,6 +17,15 @@ class StorageService {
     return ref.getDownloadURL();
   }
 
+  Future<String> uploadGymLogo({
+    required String gymId,
+    required File file,
+  }) async {
+    final ref = _storage.ref().child('gyms/$gymId/logo.jpg');
+    await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+    return ref.getDownloadURL();
+  }
+
   Future<String> uploadProofMedia({
     required String userId,
     required String proofId,

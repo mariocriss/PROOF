@@ -31,6 +31,14 @@ class AuthService {
 
   Future<void> signOut() => _auth.signOut();
 
+  Future<void> deleteCurrentUser() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('No signed-in user');
+    }
+    await user.delete();
+  }
+
   String? mapAuthError(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
@@ -38,7 +46,8 @@ class AuthService {
       case 'invalid-credential':
         return 'Invalid email or password';
       case 'email-already-in-use':
-        return 'An account with this email already exists';
+        return e.message ??
+            'This email is already registered. Sign in to continue onboarding, or use a different email.';
       case 'weak-password':
         return 'Password is too weak';
       case 'invalid-email':

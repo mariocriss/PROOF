@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -89,6 +90,55 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             label: 'Sign out',
             isOutlined: true,
             onPressed: () => ref.read(authServiceProvider).signOut(),
+          ),
+          const SizedBox(height: 12),
+          ProofButton(
+            label: 'Delete account',
+            isOutlined: true,
+            onPressed: user == null
+                ? null
+                : () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Delete account?'),
+                        content: const Text(
+                          'This permanently removes your sign-in and all PROOF data.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !context.mounted) return;
+
+                    try {
+                      final auth = ref.read(authServiceProvider);
+                      await ref
+                          .read(firestoreServiceProvider)
+                          .deleteAllUserData(user.id);
+                      await auth.deleteCurrentUser();
+                      if (context.mounted) context.go('/register');
+                    } on FirebaseAuthException catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            e.code == 'requires-recent-login'
+                                ? 'Sign out, sign in again, then delete.'
+                                : (e.message ?? 'Could not delete account'),
+                          ),
+                        ),
+                      );
+                    }
+                  },
           ),
         ],
       ),

@@ -1,6 +1,10 @@
+import 'package:proof/core/utils/goal_progress.dart';
+import 'package:proof/core/utils/skill_badge_evaluator.dart';
+import 'package:proof/core/utils/skill_display_name.dart';
 import 'package:proof/shared/models/confidence_level.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
+import 'package:proof/shared/models/skill_badge.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/timeline_event.dart';
 
@@ -167,6 +171,48 @@ class TimelineMilestoneEvaluator {
     }
 
     return milestones;
+  }
+
+  static List<TimelineMilestoneCandidate> evaluateBadgesEarned({
+    required SkillModel skill,
+    required List<SkillBadgeId> newBadges,
+  }) {
+    return newBadges
+        .where(
+          (badge) =>
+              badge.isMajorTimelineEvent ||
+              badge == SkillBadgeId.goalReached,
+        )
+        .map(
+          (badge) => TimelineMilestoneCandidate(
+            type: TimelineEventType.achievement,
+            milestoneKey: 'badge_${badge.value}_${skill.id}',
+            title: SkillBadgeEvaluator.displayLabel(badge, skill),
+            subtitle: SkillDisplayName.format(skill),
+            referenceId: skill.id,
+          ),
+        )
+        .toList();
+  }
+
+  static List<TimelineMilestoneCandidate> evaluateGoalReached({
+    required SkillModel skill,
+    required bool hadGoalReachedBadge,
+  }) {
+    final goal = GoalProgress.forSkill(skill);
+    if (goal?.targetReached != true || hadGoalReachedBadge) {
+      return const [];
+    }
+
+    return [
+      TimelineMilestoneCandidate(
+        type: TimelineEventType.milestone,
+        milestoneKey: 'goal_reached_${skill.id}',
+        title: 'Goal reached',
+        subtitle: SkillDisplayName.format(skill),
+        referenceId: skill.id,
+      ),
+    ];
   }
 
   static List<TimelineMilestoneCandidate> evaluateOneYearActive({

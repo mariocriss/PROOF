@@ -16,6 +16,10 @@ class ProofModel {
     required this.proofSource,
     this.verificationStatus = VerificationStatus.selfReported,
     this.coachId,
+    this.requestedCoachId,
+    this.verificationGymId,
+    this.verifiedByCoachId,
+    this.verifiedAt,
     this.rejectionNote = '',
     this.notes = '',
     this.mediaUrl,
@@ -23,6 +27,8 @@ class ProofModel {
     this.originalUnit,
     this.normalizedValue,
     this.location = '',
+    this.variantId,
+    this.variantName,
   });
 
   final String id;
@@ -36,6 +42,10 @@ class ProofModel {
   final ProofSource proofSource;
   final VerificationStatus verificationStatus;
   final String? coachId;
+  final String? requestedCoachId;
+  final String? verificationGymId;
+  final String? verifiedByCoachId;
+  final DateTime? verifiedAt;
   final String rejectionNote;
   final DateTime recordedAt;
   final DateTime createdAt;
@@ -43,11 +53,14 @@ class ProofModel {
   final String? originalUnit;
   final double? normalizedValue;
   final String location;
+  final String? variantId;
+  final String? variantName;
 
   bool get isCoachVerifiedForStack {
     if (verificationStatus == VerificationStatus.coachVerified) return true;
     if (verificationStatus == VerificationStatus.pendingVerification ||
-        verificationStatus == VerificationStatus.rejected) {
+        verificationStatus == VerificationStatus.rejected ||
+        verificationStatus == VerificationStatus.declined) {
       return false;
     }
     return proofSource == ProofSource.coach;
@@ -55,10 +68,11 @@ class ProofModel {
 
   String get verificationLabel {
     if (verificationStatus == VerificationStatus.pendingVerification) {
-      return 'Pending coach verification';
+      return 'Awaiting coach review';
     }
-    if (verificationStatus == VerificationStatus.rejected) {
-      return 'Verification rejected';
+    if (verificationStatus == VerificationStatus.rejected ||
+        verificationStatus == VerificationStatus.declined) {
+      return 'Verification declined';
     }
     if (isCoachVerifiedForStack) return ProofSource.coach.label;
     return ProofSource.selfReported.label;
@@ -96,6 +110,10 @@ class ProofModel {
       proofSource: proofSource,
       verificationStatus: resolvedStatus,
       coachId: data['coachId'] as String?,
+      requestedCoachId: data['requestedCoachId'] as String? ?? data['coachId'] as String?,
+      verificationGymId: data['verificationGymId'] as String?,
+      verifiedByCoachId: data['verifiedByCoachId'] as String?,
+      verifiedAt: (data['verifiedAt'] as Timestamp?)?.toDate(),
       rejectionNote: data['rejectionNote'] as String? ?? '',
       recordedAt: (data['recordedAt'] as Timestamp?)?.toDate() ??
           (data['createdAt'] as Timestamp?)?.toDate() ??
@@ -107,6 +125,8 @@ class ProofModel {
           (data['normalizedKg'] as num?)?.toDouble() ??
           (data['normalizedMetricValue'] as num?)?.toDouble(),
       location: data['location'] as String? ?? '',
+      variantId: data['variantId'] as String?,
+      variantName: data['variantName'] as String?,
     );
   }
 
@@ -122,6 +142,11 @@ class ProofModel {
       'proofSource': proofSource.value,
       'verificationStatus': verificationStatus.value,
       'coachId': coachId,
+      'requestedCoachId': requestedCoachId ?? coachId,
+      'verificationGymId': verificationGymId,
+      'verifiedByCoachId': verifiedByCoachId,
+      'verifiedAt':
+          verifiedAt != null ? Timestamp.fromDate(verifiedAt!) : null,
       'rejectionNote': rejectionNote,
       'recordedAt': Timestamp.fromDate(recordedAt),
       'createdAt': Timestamp.fromDate(createdAt),
@@ -129,6 +154,8 @@ class ProofModel {
       'originalUnit': originalUnit ?? unit,
       'normalizedValue': normalizedValue,
       'location': location,
+      'variantId': variantId,
+      'variantName': variantName,
     };
   }
 
@@ -136,6 +163,10 @@ class ProofModel {
     ProofSource? proofSource,
     VerificationStatus? verificationStatus,
     String? coachId,
+    String? requestedCoachId,
+    String? verificationGymId,
+    String? verifiedByCoachId,
+    DateTime? verifiedAt,
     String? rejectionNote,
   }) {
     return ProofModel(
@@ -150,6 +181,10 @@ class ProofModel {
       proofSource: proofSource ?? this.proofSource,
       verificationStatus: verificationStatus ?? this.verificationStatus,
       coachId: coachId ?? this.coachId,
+      requestedCoachId: requestedCoachId ?? this.requestedCoachId,
+      verificationGymId: verificationGymId ?? this.verificationGymId,
+      verifiedByCoachId: verifiedByCoachId ?? this.verifiedByCoachId,
+      verifiedAt: verifiedAt ?? this.verifiedAt,
       rejectionNote: rejectionNote ?? this.rejectionNote,
       recordedAt: recordedAt,
       createdAt: createdAt,
@@ -157,6 +192,8 @@ class ProofModel {
       originalUnit: originalUnit,
       normalizedValue: normalizedValue,
       location: location,
+      variantId: variantId,
+      variantName: variantName,
     );
   }
 }

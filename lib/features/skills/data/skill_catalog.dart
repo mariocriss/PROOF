@@ -2,11 +2,49 @@ import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/shared/models/measurement_type.dart';
 import 'package:proof/shared/models/performance_type.dart';
 import 'package:proof/shared/models/skill_catalog_entry.dart';
+import 'package:proof/shared/models/skill_catalog_variant.dart';
 
 class SkillCatalog {
   SkillCatalog._();
 
   static const String customSkillId = 'custom_skill';
+
+  static const pushUpVariants = [
+    SkillCatalogVariant(id: 'standard', name: 'Standard'),
+    SkillCatalogVariant(id: 'knees', name: 'On Knees'),
+    SkillCatalogVariant(id: 'diamond', name: 'Diamond'),
+    SkillCatalogVariant(id: 'wide', name: 'Wide Grip'),
+    SkillCatalogVariant(id: 'incline', name: 'Incline'),
+    SkillCatalogVariant(id: 'decline', name: 'Decline'),
+    SkillCatalogVariant(id: 'archer', name: 'Archer'),
+    SkillCatalogVariant(id: 'one_arm', name: 'One Arm'),
+  ];
+
+  static const pullUpVariants = [
+    SkillCatalogVariant(id: 'strict', name: 'Strict'),
+    SkillCatalogVariant(id: 'chin_up', name: 'Chin-up'),
+    SkillCatalogVariant(id: 'neutral', name: 'Neutral Grip'),
+    SkillCatalogVariant(id: 'wide', name: 'Wide Grip'),
+    SkillCatalogVariant(id: 'chest_to_bar', name: 'Chest-to-Bar'),
+    SkillCatalogVariant(id: 'weighted', name: 'Weighted'),
+    SkillCatalogVariant(id: 'assisted', name: 'Assisted'),
+  ];
+
+  static const squatVariants = [
+    SkillCatalogVariant(id: 'air', name: 'Air Squat'),
+    SkillCatalogVariant(id: 'back', name: 'Back Squat'),
+    SkillCatalogVariant(id: 'front', name: 'Front Squat'),
+    SkillCatalogVariant(id: 'goblet', name: 'Goblet Squat'),
+    SkillCatalogVariant(id: 'overhead', name: 'Overhead Squat'),
+    SkillCatalogVariant(id: 'pistol', name: 'Pistol Squat'),
+  ];
+
+  static const plankVariants = [
+    SkillCatalogVariant(id: 'front', name: 'Front Plank'),
+    SkillCatalogVariant(id: 'side', name: 'Side Plank'),
+    SkillCatalogVariant(id: 'weighted', name: 'Weighted Plank'),
+    SkillCatalogVariant(id: 'high', name: 'High Plank'),
+  ];
 
   static SkillCatalogEntry _entry(
     String discipline,
@@ -16,6 +54,8 @@ class SkillCatalog {
     String defaultUnit,
     List<String> allowedUnits, {
     String summary = '',
+    bool supportsVariants = false,
+    List<SkillCatalogVariant> variants = const [],
   }) {
     return SkillCatalogEntry(
       id: _slug(discipline, name),
@@ -26,10 +66,18 @@ class SkillCatalog {
       allowedUnits: allowedUnits,
       measurementType: measurementType,
       performanceType: performanceType,
+      supportsVariants: supportsVariants,
+      variants: variants,
     );
   }
 
-  static SkillCatalogEntry _reps(String discipline, String name, {String summary = ''}) =>
+  static SkillCatalogEntry _reps(
+    String discipline,
+    String name, {
+    String summary = '',
+    bool supportsVariants = false,
+    List<SkillCatalogVariant> variants = const [],
+  }) =>
       _entry(
         discipline,
         name,
@@ -38,6 +86,8 @@ class SkillCatalog {
         MeasurementUnits.reps,
         [MeasurementUnits.reps],
         summary: summary,
+        supportsVariants: supportsVariants,
+        variants: variants,
       );
 
   static SkillCatalogEntry _maxWeight(String discipline, String name, {String summary = ''}) =>
@@ -62,7 +112,13 @@ class SkillCatalog {
         summary: summary,
       );
 
-  static SkillCatalogEntry _longestDuration(String discipline, String name, {String summary = ''}) =>
+  static SkillCatalogEntry _longestDuration(
+    String discipline,
+    String name, {
+    String summary = '',
+    bool supportsVariants = false,
+    List<SkillCatalogVariant> variants = const [],
+  }) =>
       _entry(
         discipline,
         name,
@@ -71,6 +127,8 @@ class SkillCatalog {
         MeasurementUnits.time,
         [MeasurementUnits.time],
         summary: summary,
+        supportsVariants: supportsVariants,
+        variants: variants,
       );
 
   static SkillCatalogEntry _longestDistance(
@@ -119,8 +177,27 @@ class SkillCatalog {
 
   static final List<SkillCatalogEntry> all = [
     // Strength
-    _reps('Strength', 'Push-ups', summary: 'Maximum consecutive push-ups.'),
-    _reps('Strength', 'Pull-ups', summary: 'Maximum consecutive pull-ups.'),
+    _reps(
+      'Strength',
+      'Push-ups',
+      summary: 'Maximum consecutive push-ups.',
+      supportsVariants: true,
+      variants: pushUpVariants,
+    ),
+    _reps(
+      'Strength',
+      'Pull-ups',
+      summary: 'Maximum consecutive pull-ups.',
+      supportsVariants: true,
+      variants: pullUpVariants,
+    ),
+    _reps(
+      'Strength',
+      'Squats',
+      summary: 'Maximum consecutive squats for a given variation.',
+      supportsVariants: true,
+      variants: squatVariants,
+    ),
     _reps('Strength', 'Chin-ups', summary: 'Maximum consecutive chin-ups.'),
     _maxWeight('Strength', 'Bench Press', summary: 'Heaviest successful bench press.'),
     _maxWeight('Strength', 'Deadlift', summary: 'Heaviest successful deadlift.'),
@@ -198,7 +275,13 @@ class SkillCatalog {
     _highestScore('Balance & Coordination', 'Coordination Drill', summary: 'Coordination drill score.'),
 
     // Core
-    _longestDuration('Core', 'Plank', summary: 'Longest plank hold.'),
+    _longestDuration(
+      'Core',
+      'Plank',
+      summary: 'Longest plank hold.',
+      supportsVariants: true,
+      variants: plankVariants,
+    ),
     _longestDuration('Core', 'Side Plank', summary: 'Longest side plank hold.'),
     _longestDuration('Core', 'Hollow Hold', summary: 'Longest hollow hold.'),
     _longestDuration('Core', 'Superman Hold', summary: 'Longest superman hold.'),

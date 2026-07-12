@@ -4,12 +4,17 @@ import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/app_constants.dart';
 import 'package:proof/core/utils/confidence_progress_segments.dart';
 import 'package:proof/core/utils/date_utils.dart';
+import 'package:proof/core/utils/skill_display_name.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/unit_helpers.dart';
 import 'package:proof/core/utils/skill_uniqueness.dart';
 import 'package:proof/core/utils/validators.dart';
+import 'package:proof/features/skills/presentation/widgets/skill_badges_section.dart';
+import 'package:proof/features/skills/presentation/widgets/skill_goal_progress_card.dart';
+import 'package:proof/features/skills/presentation/widgets/variant_selector_field.dart';
+import 'package:proof/shared/models/skill_catalog_variant.dart';
 import 'package:proof/features/skills/data/skill_catalog.dart';
 import 'package:proof/shared/models/measurement_type.dart';
 import 'package:proof/shared/models/performance_type.dart';
@@ -360,13 +365,23 @@ class _SkillsPremiumCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          skill.name,
+                          SkillDisplayName.format(skill),
                           style:
                               Theme.of(context).textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w600,
                                   ),
                         ),
-                        const SizedBox(height: 4),
+                        if (skill.variantName != null &&
+                            skill.variantName!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            skill.name,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: AppColors.inkMuted,
+                                ),
+                          ),
+                        ] else
+                          const SizedBox(height: 4),
                         Text(
                           'Current best',
                           style:
@@ -995,8 +1010,12 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
   late String _selectedUnit;
   late String _targetUnit;
   bool _isLoading = false;
+  String? _selectedVariantId;
+  String _customVariantName = '';
 
   bool get _isCustom => widget.entry.isCustom;
+  bool get _supportsVariants =>
+      !widget.entry.isCustom && widget.entry.supportsVariants;
 
   @override
   void initState() {
@@ -1020,6 +1039,9 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
       _selectedUnit = widget.entry.defaultUnit;
     }
     _targetUnit = _selectedUnit;
+    if (_supportsVariants) {
+      _selectedVariantId = SkillCatalogVariant.standardId;
+    }
   }
 
   @override
@@ -1044,12 +1066,37 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_supportsVariants) {
+      final variantError = validateVariantSelection(
+        entry: widget.entry,
+        selectedVariantId: _selectedVariantId,
+      );
+      if (variantError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(variantError)),
+        );
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
 
     try {
       final user = ref.read(authServiceProvider).currentUser!;
       final resultRaw = _resultController.text.trim();
       final targetRaw = _targetController.text.trim();
+
+      final variantId = resolveVariantIdForSave(
+        entry: widget.entry,
+        selectedVariantId: _selectedVariantId,
+        customVariantName: _customVariantName,
+      );
+      final variantName = resolveVariantNameForSave(
+        entry: widget.entry,
+        selectedVariantId: _selectedVariantId,
+        customVariantName: _customVariantName,
+      );
 
       final skill = SkillModel(
         id: const Uuid().v4(),
@@ -1062,6 +1109,8 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
         measurementType: _measurementType,
         performanceType: _performanceType,
         catalogId: _isCustom ? null : widget.entry.id,
+        variantId: variantId,
+        variantName: variantName,
         targetValue: targetRaw.isEmpty ? null : targetRaw,
         targetUnit: targetRaw.isEmpty ? null : _targetUnit,
         createdAt: DateTime.now(),
@@ -1114,9 +1163,26 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
                 const SizedBox(height: 24),
               ],
               if (!_isCustom) ...[
-                _ReadOnlyField(label: 'Skill name', value: _nameController.text),
+                _ReadOnlyField(label: 'Skill', value: _nameController.text),
                 const SizedBox(height: 16),
-                _ReadOnlyField(label: 'Discipline', value: _disciplineController.text),
+                _ReadOnlyField(
+                  label: 'Discipline',
+                  value: _disciplineController.text,
+                ),
+                if (_supportsVariants) ...[
+                  const SizedBox(height: 16),
+                  VariantSelectorField(
+                    entry: widget.entry,
+                    selectedVariantId: _selectedVariantId,
+                    customVariantName: _customVariantName,
+                    onChanged: (id, name) {
+                      setState(() {
+                        _selectedVariantId = id;
+                        _customVariantName = name;
+                      });
+                    },
+                  ),
+                ],
               ] else ...[
                 ProofTextField(
                   controller: _nameController,
@@ -1231,13 +1297,14 @@ Future<void> _showDuplicateSkillDialog(
   BuildContext context,
   SkillModel existing,
 ) async {
+  final label = SkillDisplayName.format(existing);
   final action = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('You already track this skill'),
-      content: const Text(
-        'Every capability has one Proof Stack.\n'
-        'Record a new Proof to continue building your history.',
+      title: Text('You already track $label'),
+      content: Text(
+        'Every skill and variation has one Proof Stack.\n'
+        'Add a new proof to continue building your $label history.',
       ),
       actions: [
         TextButton(
@@ -1339,6 +1406,22 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
 
   SkillModel get skill => widget.skill;
 
+  Future<void> _editTarget() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _SkillTargetSheet(skill: skill),
+    );
+  }
+
+  Future<void> _setNewTargetAfterGoal() async {
+    await _editTarget();
+  }
+
   Future<void> _setStatus(SkillStatus status) async {
     setState(() => _isLoading = true);
     try {
@@ -1407,6 +1490,22 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (skill.variantName != null && skill.variantName!.isNotEmpty) ...[
+              Text(
+                skill.variantName!,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                skill.name,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: AppColors.inkMuted,
+                    ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Row(
               children: [
                 Container(
@@ -1455,10 +1554,22 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
               ),
             ],
             if (skill.formattedTarget != null) ...[
-              const SizedBox(height: 16),
-              Text('Target', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 4),
-              Text(skill.formattedTarget!, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 24),
+              SkillGoalProgressCard(
+                skill: skill,
+                onEditTarget: _editTarget,
+                onGoalReached: _setNewTargetAfterGoal,
+              ),
+            ] else if (skill.formattedCurrentBest != null) ...[
+              const SizedBox(height: 24),
+              SkillGoalProgressCard(
+                skill: skill,
+                onEditTarget: _editTarget,
+              ),
+            ],
+            if (skill.earnedBadgeIds.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              SkillBadgesSection(skill: skill),
             ],
             if (skill.description.isNotEmpty) ...[
               const SizedBox(height: 24),
@@ -1514,6 +1625,107 @@ class _SkillDetailBodyState extends ConsumerState<_SkillDetailBody> {
               isOutlined: true,
               isLoading: _isLoading,
               onPressed: _delete,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkillTargetSheet extends ConsumerStatefulWidget {
+  const _SkillTargetSheet({required this.skill});
+
+  final SkillModel skill;
+
+  @override
+  ConsumerState<_SkillTargetSheet> createState() => _SkillTargetSheetState();
+}
+
+class _SkillTargetSheetState extends ConsumerState<_SkillTargetSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _targetController;
+  late String _targetUnit;
+  bool _isLoading = false;
+
+  SkillModel get skill => widget.skill;
+
+  @override
+  void initState() {
+    super.initState();
+    _targetController = TextEditingController(text: skill.targetValue ?? '');
+    _targetUnit = skill.targetUnit ?? skill.defaultUnit;
+  }
+
+  @override
+  void dispose() {
+    _targetController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final user = ref.read(authServiceProvider).currentUser!;
+      await ref.read(firestoreServiceProvider).updateSkillTarget(
+            userId: user.uid,
+            skillId: skill.id,
+            targetValue: _targetController.text.trim(),
+            targetUnit: _targetUnit,
+          );
+      if (mounted) Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Personal target',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Targets track progress only — they do not change current best or confidence.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.inkMuted,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            ResultInputField(
+              controller: _targetController,
+              measurementType: skill.measurementType,
+              unit: _targetUnit,
+              label: 'Target',
+            ),
+            const SizedBox(height: 16),
+            UnitSelector(
+              label: 'Target unit',
+              allowedUnits: skill.allowedUnits,
+              selectedUnit: _targetUnit,
+              onChanged: (u) => setState(() => _targetUnit = u),
+            ),
+            const SizedBox(height: 24),
+            ProofButton(
+              label: 'Save target',
+              isLoading: _isLoading,
+              onPressed: _save,
             ),
           ],
         ),

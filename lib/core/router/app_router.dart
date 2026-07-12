@@ -1,14 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:proof/core/utils/onboarding_paths.dart';
 import 'package:proof/features/auth/presentation/auth_screens.dart';
 import 'package:proof/features/dashboard/presentation/dashboard_screen.dart';
-import 'package:proof/features/identity/presentation/identity_screens.dart';
 import 'package:proof/features/account/presentation/account_screens.dart';
+import 'package:proof/features/identity/presentation/identity_screens.dart';
 import 'package:proof/features/coach_tools/presentation/coach_tools_screens.dart';
 import 'package:proof/features/coaches/presentation/coach_profile_screen.dart';
 import 'package:proof/features/coaches/presentation/coaches_screen.dart';
 import 'package:proof/features/friends/presentation/friends_screen.dart';
+import 'package:proof/features/gyms/presentation/gym_manager_screens.dart';
 import 'package:proof/features/gyms/presentation/gyms_screen.dart';
+import 'package:proof/features/onboarding/presentation/onboarding_screens.dart';
 import 'package:proof/features/people/presentation/request_screens.dart';
 import 'package:proof/features/more/presentation/more_screen.dart';
 import 'package:proof/features/passport/presentation/my_passport_tab.dart';
@@ -22,15 +25,14 @@ import 'package:proof/features/shell/presentation/app_shell.dart';
 import 'package:proof/features/skills/presentation/skills_screens.dart';
 import 'package:proof/features/timeline/presentation/timeline_screens.dart';
 import 'package:proof/features/verification/presentation/verification_requests_screen.dart';
+import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final userState = ref.watch(currentUserProvider);
-
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/login',
     redirect: (context, state) {
+      final authState = ref.read(authStateProvider);
       final isLoading = authState.isLoading;
       if (isLoading) return null;
 
@@ -39,9 +41,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       final location = state.matchedLocation;
 
       final isAuthRoute = location == '/login' || location == '/register';
-      final isCreateIdentity = location == '/create-identity';
       final isPublicPassport =
           location.startsWith('/passport/') && location != '/passport';
+      final isOnboardingRoute = OnboardingPaths.isOnboardingRoute(location);
+      final isLegacyOnboarding =
+          location == '/create-identity' || location == '/onboarding';
 
       if (location == '/profile') {
         return '/dashboard';
@@ -51,22 +55,40 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/login';
       }
 
-      if (isAuth && isAuthRoute) {
-        return '/dashboard';
-      }
+      final isGymManagerRoute = location.startsWith('/gym-manager');
 
       if (isAuth && !isPublicPassport) {
+        final userState = ref.read(currentUserProvider);
         if (userState.isLoading) return null;
 
         final userModel = userState.valueOrNull;
-        final hasIdentity = userModel?.hasIdentity ?? false;
+        final onboardingComplete = userModel?.onboardingCompleted ?? false;
+        final managedGymId = userModel?.managedGymIds.firstOrNull;
 
-        if (!hasIdentity && !isCreateIdentity) {
-          return '/create-identity';
+        if (!onboardingComplete) {
+          if (isGymManagerRoute && managedGymId != null) return null;
+
+          final target = OnboardingPaths.routeForUser(
+            step: userModel?.onboardingStep ?? OnboardingStep.chooseAccountType,
+            onboardingCompleted: false,
+            role: userModel?.accountType,
+            managedGymId: managedGymId,
+          );
+
+          if (isAuthRoute || isLegacyOnboarding) return target;
+          if (isOnboardingRoute) return null;
+          return target;
         }
 
-        if (hasIdentity && isCreateIdentity) {
-          return '/dashboard';
+        if (onboardingComplete) {
+          if (isAuthRoute || isOnboardingRoute || isLegacyOnboarding) {
+            return OnboardingPaths.routeForUser(
+              step: OnboardingStep.completed,
+              onboardingCompleted: true,
+              role: userModel?.accountType,
+              managedGymId: managedGymId,
+            );
+          }
         }
       }
 
@@ -83,7 +105,31 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/create-identity',
-        builder: (context, state) => const CreateIdentityScreen(),
+        redirect: (_, __) => OnboardingPaths.athleteIdentity,
+      ),
+      GoRoute(
+        path: '/onboarding',
+        redirect: (_, __) => OnboardingPaths.accountType,
+      ),
+      GoRoute(
+        path: '/onboarding/account-type',
+        builder: (context, state) => const ChooseAccountTypeScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding/athlete-identity',
+        builder: (context, state) => const AthleteIdentityOnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding/coach-profile',
+        builder: (context, state) => const CoachProfileOnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding/gym-profile',
+        builder: (context, state) => const GymProfileOnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding/select-gym',
+        builder: (context, state) => const SelectGymOnboardingScreen(),
       ),
       GoRoute(
         path: '/profile',
@@ -237,6 +283,32 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const GymsScreen(),
       ),
       GoRoute(
+        path: '/gym-manager',
+        builder: (context, state) => const GymManagerHubScreen(),
+        routes: [
+          GoRoute(
+            path: 'create',
+            builder: (context, state) => const CreateGymScreen(),
+          ),
+          GoRoute(
+            path: ':gymId',
+            builder: (context, state) {
+              final gymId = state.pathParameters['gymId']!;
+              return GymManagerDashboardScreen(gymId: gymId);
+            },
+            routes: [
+              GoRoute(
+                path: 'edit',
+                builder: (context, state) {
+                  final gymId = state.pathParameters['gymId']!;
+                  return GymEditProfileScreen(gymId: gymId);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(
         path: '/verification-requests',
         builder: (context, state) => const VerificationRequestsScreen(),
       ),
@@ -277,4 +349,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  ref.listen(authStateProvider, (_, __) => router.refresh());
+  ref.listen(currentUserProvider, (_, __) => router.refresh());
+  ref.onDispose(router.dispose);
+
+  return router;
 });

@@ -10,6 +10,9 @@ class FirestorePaths {
   static const String relationships = 'relationships';
   static const String verificationRequests = 'verificationRequests';
   static const String coachProfiles = 'coachProfiles';
+  static const String gyms = 'gyms';
+  static const String gymMemberships = 'gymMemberships';
+  static const String gymHandles = 'gymHandles';
 
   static String userDoc(String userId) => '$users/$userId';
 

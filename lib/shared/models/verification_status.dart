@@ -2,6 +2,7 @@ enum VerificationStatus {
   selfReported('self_reported'),
   pendingVerification('pending_verification'),
   coachVerified('coach_verified'),
+  declined('declined'),
   rejected('rejected');
 
   const VerificationStatus(this.value);
@@ -20,10 +21,14 @@ enum VerificationStatus {
 
   String get label => switch (this) {
         VerificationStatus.selfReported => 'Self-reported',
-        VerificationStatus.pendingVerification => 'Pending verification',
+        VerificationStatus.pendingVerification => 'Awaiting coach review',
         VerificationStatus.coachVerified => 'Coach verified',
-        VerificationStatus.rejected => 'Rejected',
+        VerificationStatus.declined => 'Verification declined',
+        VerificationStatus.rejected => 'Verification declined',
       };
 
   bool get countsAsCoachVerified => this == VerificationStatus.coachVerified;
+
+  bool get isAwaitingCoachReview =>
+      this == VerificationStatus.pendingVerification;
 }

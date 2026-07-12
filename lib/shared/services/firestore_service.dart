@@ -1,7 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:proof/core/constants/firestore_paths.dart';
+import 'package:proof/core/utils/gym_verification_validator.dart';
 import 'package:proof/core/utils/proof_stack_calculator.dart';
 import 'package:proof/core/utils/result_normalizer.dart';
+import 'package:proof/core/utils/skill_badge_evaluator.dart';
 import 'package:proof/core/utils/skill_stack_reconciler.dart';
 import 'package:proof/core/utils/skill_uniqueness.dart';
 import 'package:proof/core/utils/timeline_milestone_evaluator.dart';
@@ -10,20 +13,26 @@ import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
+import 'package:proof/shared/models/skill_badge.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/skill_status.dart';
 import 'package:proof/shared/models/timeline_event.dart';
 import 'package:proof/shared/models/user_model.dart';
 import 'package:proof/shared/models/coach_profile.dart';
+import 'package:proof/shared/models/gym_membership_model.dart';
+import 'package:proof/shared/models/gym_model.dart';
 import 'package:proof/shared/models/relationship_model.dart';
+import 'package:proof/shared/models/onboarding_draft.dart';
+import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/models/verification_status.dart';
 
 class FirestoreService {
-  FirestoreService(this._firestore);
+  FirestoreService(this._firestore, this._auth);
 
   final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
 
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection(FirestorePaths.users);
@@ -57,6 +66,15 @@ class FirestoreService {
   CollectionReference<Map<String, dynamic>> get _coachProfiles =>
       _firestore.collection(FirestorePaths.coachProfiles);
 
+  CollectionReference<Map<String, dynamic>> get _gyms =>
+      _firestore.collection(FirestorePaths.gyms);
+
+  CollectionReference<Map<String, dynamic>> get _gymMemberships =>
+      _firestore.collection(FirestorePaths.gymMemberships);
+
+  CollectionReference<Map<String, dynamic>> get _gymHandles =>
+      _firestore.collection(FirestorePaths.gymHandles);
+
   static const int timelineMigrationVersion = 2;
   static const int skillMergeVersion = 2;
 
@@ -64,6 +82,65 @@ class FirestoreService {
 
   Future<void> createUser(UserModel user) async {
     await _userRef(user.id).set(user.toFirestore());
+  }
+
+  Future<void> deleteAllUserData(String userId) async {
+    final user = await getUser(userId);
+
+    final identity = await getIdentity(userId);
+    if (identity != null) {
+      await _handles.doc(identity.handle.toLowerCase()).delete();
+    }
+
+    final coachProfile = await getCoachProfile(userId);
+    if (coachProfile != null && coachProfile.handle.isNotEmpty) {
+      final handleDoc = await _handles.doc(coachProfile.handle.toLowerCase()).get();
+      if (handleDoc.exists && handleDoc.data()?['userId'] == userId) {
+        await _handles.doc(coachProfile.handle.toLowerCase()).delete();
+      }
+    }
+
+    await _coachProfiles.doc(userId).delete();
+
+    final memberships = await getMembershipsForUser(userId);
+    for (final membership in memberships) {
+      await _gymMemberships.doc(membership.id).delete();
+    }
+
+    if (user != null) {
+      for (final gymId in user.managedGymIds) {
+        final gym = await getGym(gymId);
+        if (gym != null && gym.createdBy == userId) {
+          final handleRef = _gymHandles.doc(gym.handle.toLowerCase());
+          final handleDoc = await handleRef.get();
+          if (handleDoc.exists) {
+            await handleRef.delete();
+          }
+          await _gyms.doc(gymId).delete();
+        }
+      }
+    }
+
+    await _deleteCollection(_skillsRef(userId));
+    await _deleteCollection(_proofsRef(userId));
+    await _deleteCollection(_timelineRef(userId));
+    await _identityRef(userId).delete();
+    await _userRef(userId).delete();
+  }
+
+  Future<void> _deleteCollection(
+    CollectionReference<Map<String, dynamic>> collection,
+  ) async {
+    const batchSize = 100;
+    while (true) {
+      final snap = await collection.limit(batchSize).get();
+      if (snap.docs.isEmpty) break;
+      final batch = _firestore.batch();
+      for (final doc in snap.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
   }
 
   /// Creates the user doc if missing (e.g. account existed before Firestore write).
@@ -107,6 +184,12 @@ class FirestoreService {
     return !doc.exists;
   }
 
+  Future<bool> isHandleAvailableForUser(String handle, String userId) async {
+    final doc = await _handles.doc(handle.toLowerCase()).get();
+    if (!doc.exists) return true;
+    return doc.data()?['userId'] == userId;
+  }
+
   Future<void> createIdentity(PhysicalIdentity identity) async {
     final handle = identity.handle.toLowerCase();
     final batch = _firestore.batch();
@@ -118,6 +201,7 @@ class FirestoreService {
       _userRef(identity.userId),
       {
         'hasIdentity': true,
+        'onboardingCompleted': false,
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -436,16 +520,16 @@ class FirestoreService {
   // ── Proofs ────────────────────────────────────────────────────────────────
 
   Future<void> addProof(ProofModel proof) async {
-    await _proofsRef(proof.userId).doc(proof.id).set(proof.toFirestore());
+    final skillsSnap = await _skillsRef(proof.userId).get();
+    final skills = skillsSnap.docs.map(SkillModel.fromFirestore).toList();
+    final skill = skills.where((s) => s.id == proof.skillId).firstOrNull;
+    if (skill == null) return;
+
+    final storedProof = _attachSkillVariant(proof, skill);
+    await _proofsRef(proof.userId).doc(storedProof.id).set(storedProof.toFirestore());
 
     final allProofsSnap = await _proofsRef(proof.userId).get();
     final allProofs = allProofsSnap.docs.map(ProofModel.fromFirestore).toList();
-
-    final skillsSnap = await _skillsRef(proof.userId).get();
-    final skills = skillsSnap.docs.map(SkillModel.fromFirestore).toList();
-
-    final skill = skills.where((s) => s.id == proof.skillId).firstOrNull;
-    if (skill == null) return;
 
     final stack = _stackContext(
       skill: skill,
@@ -453,31 +537,76 @@ class FirestoreService {
       proofs: allProofs,
     );
     final priorStackProofs = stack.proofs
-        .where((p) => p.id != proof.id)
+        .where((p) => p.id != storedProof.id)
         .toList();
     final previousConfidence =
         ProofStackCalculator.calculate(priorStackProofs);
     final newConfidence = ProofStackCalculator.calculate(stack.proofs);
 
     final priorBest = _bestNormalizedValue(skill, priorStackProofs);
-    final isPersonalBest = proof.normalizedValue != null &&
+    final isPersonalBest = storedProof.normalizedValue != null &&
         BestResultLogic.isBetter(
-          candidate: proof.normalizedValue!,
+          candidate: storedProof.normalizedValue!,
           current: priorBest,
           performanceType: skill.performanceType,
         ) &&
         priorStackProofs.isNotEmpty;
 
+    final hadGoalReachedBadge = stack.primary.earnedBadgeIds
+        .contains(SkillBadgeId.goalReached.value);
+
     await _syncSkillEvidence(stack.primary, stack.proofs);
 
+    final updatedSkill =
+        await getSkill(proof.userId, stack.primary.id) ?? stack.primary;
+    final personalBestCount = updatedSkill.personalBestCount +
+        (isPersonalBest ? 1 : 0);
+    final skillForBadges = updatedSkill.copyWith(
+      personalBestCount: personalBestCount,
+    );
+
+    final newBadges = SkillBadgeEvaluator.newlyEarned(
+      skill: skillForBadges,
+      stackProofs: stack.proofs,
+      allSkills: skills,
+      allProofs: allProofs,
+      isPersonalBest: isPersonalBest,
+      personalBestCount: personalBestCount,
+      confidence: newConfidence,
+    );
+
+    if (newBadges.isNotEmpty ||
+        personalBestCount != updatedSkill.personalBestCount) {
+      await _skillsRef(proof.userId).doc(stack.primary.id).update({
+        'earnedBadgeIds': [
+          ...updatedSkill.earnedBadgeIds,
+          ...newBadges.map((badge) => badge.value),
+        ],
+        'personalBestCount': personalBestCount,
+      });
+    }
+
     final milestones = TimelineMilestoneEvaluator.evaluateProofAdded(
-      proof: proof,
+      proof: storedProof,
       skill: stack.primary,
       allProofs: allProofs,
       priorSkillProofs: priorStackProofs,
       previousConfidence: previousConfidence,
       newConfidence: newConfidence,
       isPersonalBest: isPersonalBest,
+    );
+
+    milestones.addAll(
+      TimelineMilestoneEvaluator.evaluateBadgesEarned(
+        skill: stack.primary,
+        newBadges: newBadges,
+      ),
+    );
+    milestones.addAll(
+      TimelineMilestoneEvaluator.evaluateGoalReached(
+        skill: skillForBadges,
+        hadGoalReachedBadge: hadGoalReachedBadge,
+      ),
     );
 
     await _recordTimelineMilestones(proof.userId, milestones);
@@ -492,6 +621,34 @@ class FirestoreService {
         ),
       );
     }
+  }
+
+  ProofModel _attachSkillVariant(ProofModel proof, SkillModel skill) {
+    if (proof.variantId != null && proof.variantId!.isNotEmpty) {
+      return proof;
+    }
+    return ProofModel(
+      id: proof.id,
+      userId: proof.userId,
+      skillId: proof.skillId,
+      title: proof.title,
+      result: proof.result,
+      unit: proof.unit,
+      notes: proof.notes,
+      mediaUrl: proof.mediaUrl,
+      proofSource: proof.proofSource,
+      verificationStatus: proof.verificationStatus,
+      coachId: proof.coachId,
+      rejectionNote: proof.rejectionNote,
+      recordedAt: proof.recordedAt,
+      createdAt: proof.createdAt,
+      originalResult: proof.originalResult,
+      originalUnit: proof.originalUnit,
+      normalizedValue: proof.normalizedValue,
+      location: proof.location,
+      variantId: skill.variantId,
+      variantName: skill.variantName,
+    );
   }
 
   double? _bestNormalizedValue(SkillModel skill, List<ProofModel> proofs) {
@@ -608,6 +765,25 @@ class FirestoreService {
       createdAt: createdAt ?? DateTime.now(),
     );
     await _timelineRef(userId).doc(docId).set(event.toFirestore());
+  }
+
+  Future<void> migrateOnboardingIfNeeded(String userId) async {
+    final user = await getUser(userId);
+    if (user == null || user.onboardingCompleted) return;
+
+    final userDoc = await _userRef(userId).get();
+    final data = userDoc.data();
+    if (data == null || data.containsKey('onboardingCompleted')) return;
+
+    final skillsSnap = await _skillsRef(userId).limit(1).get();
+    final proofsSnap = await _proofsRef(userId).limit(1).get();
+    if (skillsSnap.docs.isEmpty && proofsSnap.docs.isEmpty) return;
+
+    await updateOnboardingProgress(
+      userId: userId,
+      onboardingCompleted: true,
+      onboardingStep: OnboardingStep.completed,
+    );
   }
 
   Future<void> migrateTimelineIfNeeded(String userId) async {
@@ -812,6 +988,10 @@ class FirestoreService {
     await _syncCoachProfileIfNeeded(userId);
   }
 
+  Future<void> ensureCoachProfile(String userId) async {
+    await _syncCoachProfileIfNeeded(userId);
+  }
+
   Future<void> _syncCoachProfileIfNeeded(String userId) async {
     final user = await getUser(userId);
     if (user == null || !user.isCoach) {
@@ -820,18 +1000,33 @@ class FirestoreService {
     }
 
     final identity = await getIdentity(userId);
-    if (identity == null) return;
+    if (identity == null) {
+      final existing = await _coachProfiles.doc(userId).get();
+      if (!existing.exists) return;
+      return;
+    }
 
     final athletesSnap = await _relationships
         .where('toUserId', isEqualTo: userId)
-        .where('type', isEqualTo: RelationshipType.coach.value)
-        .where('status', isEqualTo: RelationshipStatus.accepted.value)
         .get();
+    final athleteCount = athletesSnap.docs
+        .map(RelationshipModel.fromFirestore)
+        .where(
+          (relationship) =>
+              relationship.type == RelationshipType.coach &&
+              relationship.status == RelationshipStatus.accepted,
+        )
+        .length;
 
     final verifiedSnap = await _verificationRequests
         .where('coachId', isEqualTo: userId)
-        .where('status', isEqualTo: VerificationRequestStatus.approved.value)
         .get();
+    final verifiedProofCount = verifiedSnap.docs
+        .map(VerificationRequestModel.fromFirestore)
+        .where(
+          (request) => request.status == VerificationRequestStatus.approved,
+        )
+        .length;
 
     final profile = CoachProfile(
       userId: userId,
@@ -840,8 +1035,8 @@ class FirestoreService {
       specialty: user.specialty.isNotEmpty ? user.specialty : 'Coach',
       bio: identity.bio,
       avatarUrl: identity.avatarUrl,
-      athleteCount: athletesSnap.docs.length,
-      verifiedProofCount: verifiedSnap.docs.length,
+      athleteCount: athleteCount,
+      verifiedProofCount: verifiedProofCount,
       updatedAt: DateTime.now(),
     );
 
@@ -864,10 +1059,10 @@ class FirestoreService {
   ) {
     return _verificationRequests
         .where('athleteId', isEqualTo: athleteId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) =>
-            snap.docs.map(VerificationRequestModel.fromFirestore).toList());
+        .map((snap) => _sortVerificationRequests(
+              snap.docs.map(VerificationRequestModel.fromFirestore).toList(),
+            ));
   }
 
   Stream<List<VerificationRequestModel>> watchVerificationQueueForCoach(
@@ -875,11 +1070,17 @@ class FirestoreService {
   ) {
     return _verificationRequests
         .where('coachId', isEqualTo: coachId)
-        .where('status', isEqualTo: VerificationRequestStatus.pending.value)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) =>
-            snap.docs.map(VerificationRequestModel.fromFirestore).toList());
+        .map((snap) => _sortVerificationRequests(
+              snap.docs
+                  .map(VerificationRequestModel.fromFirestore)
+                  .where(
+                    (request) =>
+                        request.status ==
+                        VerificationRequestStatus.pending,
+                  )
+                  .toList(),
+            ));
   }
 
   Stream<List<VerificationRequestModel>> watchApprovedVerificationsForCoach(
@@ -887,40 +1088,114 @@ class FirestoreService {
   ) {
     return _verificationRequests
         .where('coachId', isEqualTo: coachId)
-        .where('status', isEqualTo: VerificationRequestStatus.approved.value)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) =>
-            snap.docs.map(VerificationRequestModel.fromFirestore).toList());
+        .map((snap) => _sortVerificationRequests(
+              snap.docs
+                  .map(VerificationRequestModel.fromFirestore)
+                  .where(
+                    (request) =>
+                        request.status ==
+                        VerificationRequestStatus.approved,
+                  )
+                  .toList(),
+            ));
+  }
+
+  List<VerificationRequestModel> _sortVerificationRequests(
+    List<VerificationRequestModel> requests,
+  ) {
+    return requests
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   Future<void> addProofWithVerification({
     required ProofModel proof,
     String? coachId,
+    String? gymId,
     String? verificationMessage,
   }) async {
     if (proof.verificationStatus == VerificationStatus.pendingVerification &&
-        coachId != null) {
-      await addProof(proof);
+        coachId != null &&
+        gymId != null) {
+      final athleteMembership = await getMembership(
+        gymId: gymId,
+        userId: proof.userId,
+        type: GymMembershipType.athlete,
+      );
+      final coachMembership = await getMembership(
+        gymId: gymId,
+        userId: coachId,
+        type: GymMembershipType.coach,
+      );
+      final validation = GymVerificationValidator.canRequestFromCoach(
+        athleteMembership: athleteMembership,
+        coachMembership: coachMembership,
+        gymId: gymId,
+        coachId: coachId,
+      );
+      if (!validation.isValid) {
+        throw StateError(validation.reason ?? 'Invalid verification request');
+      }
+
+      final proofWithGym = ProofModel(
+        id: proof.id,
+        userId: proof.userId,
+        skillId: proof.skillId,
+        title: proof.title,
+        result: proof.result,
+        unit: proof.unit,
+        notes: proof.notes,
+        mediaUrl: proof.mediaUrl,
+        proofSource: proof.proofSource,
+        verificationStatus: proof.verificationStatus,
+        coachId: coachId,
+        requestedCoachId: coachId,
+        verificationGymId: gymId,
+        recordedAt: proof.recordedAt,
+        createdAt: proof.createdAt,
+        originalResult: proof.originalResult,
+        originalUnit: proof.originalUnit,
+        normalizedValue: proof.normalizedValue,
+        location: proof.location,
+        variantId: proof.variantId,
+        variantName: proof.variantName,
+      );
+
+      await addProof(proofWithGym);
 
       final requestId = _verificationRequests.doc().id;
       final skill = await getSkill(proof.userId, proof.skillId);
-      await _verificationRequests.doc(requestId).set(
-        VerificationRequestModel(
-          id: requestId,
-          proofId: proof.id,
-          athleteId: proof.userId,
-          coachId: coachId,
-          skillId: proof.skillId,
-          status: VerificationRequestStatus.pending,
-          message: verificationMessage ?? '',
-          createdAt: DateTime.now(),
-          skillName: skill?.name ?? '',
-          resultLabel: proof.formattedResult,
-          mediaUrl: proof.mediaUrl,
-          recordedAt: proof.recordedAt,
-        ).toFirestore(),
-      );
+      final variantLabel = skill?.variantName?.trim();
+      final skillLabel = variantLabel != null && variantLabel.isNotEmpty
+          ? '$variantLabel ${skill?.name ?? ''}'
+          : skill?.name ?? '';
+
+      try {
+        await _verificationRequests.doc(requestId).set(
+          VerificationRequestModel(
+            id: requestId,
+            proofId: proof.id,
+            athleteId: proof.userId,
+            coachId: coachId,
+            gymId: gymId,
+            skillId: proof.skillId,
+            status: VerificationRequestStatus.pending,
+            message: verificationMessage ?? '',
+            createdAt: DateTime.now(),
+            skillName: skillLabel,
+            resultLabel: proof.formattedResult,
+            mediaUrl: proof.mediaUrl,
+            recordedAt: proof.recordedAt,
+            location: proof.location,
+            variantName: proof.variantName ?? '',
+          ).toFirestore(),
+        );
+      } catch (e) {
+        try {
+          await _proofsRef(proof.userId).doc(proof.id).delete();
+        } catch (_) {}
+        rethrow;
+      }
       return;
     }
 
@@ -932,15 +1207,31 @@ class FirestoreService {
     if (!requestDoc.exists) return;
 
     final request = VerificationRequestModel.fromFirestore(requestDoc);
+    final coachMemberships =
+        await getMembershipsForUser(request.coachId);
+    final reviewCheck = GymVerificationValidator.canCoachReviewRequest(
+      request: request,
+      loggedInCoachId: request.coachId,
+      coachMemberships: coachMemberships,
+    );
+    if (!reviewCheck.isValid) {
+      throw StateError(reviewCheck.reason ?? 'Cannot approve request');
+    }
+
     final proofDoc =
         await _proofsRef(request.athleteId).doc(request.proofId).get();
     if (!proofDoc.exists) return;
 
     final proof = ProofModel.fromFirestore(proofDoc);
+    final now = DateTime.now();
     final updatedProof = proof.copyWith(
       proofSource: ProofSource.coach,
       verificationStatus: VerificationStatus.coachVerified,
       coachId: request.coachId,
+      requestedCoachId: request.coachId,
+      verificationGymId: request.gymId,
+      verifiedByCoachId: request.coachId,
+      verifiedAt: now,
     );
 
     await _proofsRef(request.athleteId)
@@ -950,19 +1241,22 @@ class FirestoreService {
     await _verificationRequests.doc(requestId).update({
       'status': VerificationRequestStatus.approved.value,
       'reviewedAt': FieldValue.serverTimestamp(),
+      'stackResynced': false,
     });
 
-    await _resyncProofStack(request.athleteId, request.proofId);
-
-    await addTimelineEvent(
-      userId: request.athleteId,
-      type: TimelineEventType.coachVerified,
-      title: 'Coach verification received',
-      subtitle: request.skillName.isNotEmpty
-          ? '${request.skillName} · ${request.resultLabel}'
-          : request.resultLabel,
-      referenceId: request.proofId,
-    );
+    try {
+      await addTimelineEvent(
+        userId: request.athleteId,
+        type: TimelineEventType.coachVerified,
+        title: 'Coach verification received',
+        subtitle: request.skillName.isNotEmpty
+            ? '${request.skillName} · ${request.resultLabel}'
+            : request.resultLabel,
+        referenceId: request.proofId,
+      );
+    } catch (_) {
+      // Athlete can create the timeline event when the app finalizes locally.
+    }
 
     await _syncCoachProfileIfNeeded(request.coachId);
   }
@@ -970,25 +1264,61 @@ class FirestoreService {
   Future<void> rejectVerificationRequest({
     required String requestId,
     String rejectionNote = '',
+    required String coachId,
   }) async {
     final requestDoc = await _verificationRequests.doc(requestId).get();
     if (!requestDoc.exists) return;
 
     final request = VerificationRequestModel.fromFirestore(requestDoc);
+    final coachMemberships = await getMembershipsForUser(coachId);
+    final reviewCheck = GymVerificationValidator.canCoachReviewRequest(
+      request: request,
+      loggedInCoachId: coachId,
+      coachMemberships: coachMemberships,
+    );
+    if (!reviewCheck.isValid) {
+      throw StateError(reviewCheck.reason ?? 'Cannot decline request');
+    }
 
     await _verificationRequests.doc(requestId).update({
-      'status': VerificationRequestStatus.rejected.value,
+      'status': VerificationRequestStatus.declined.value,
       'reviewedAt': FieldValue.serverTimestamp(),
+      'declineReason': rejectionNote,
       'rejectionNote': rejectionNote,
+      'stackResynced': false,
     });
 
     await _proofsRef(request.athleteId).doc(request.proofId).update({
-      'verificationStatus': VerificationStatus.rejected.value,
+      'verificationStatus': VerificationStatus.declined.value,
       'proofSource': ProofSource.selfReported.value,
       'rejectionNote': rejectionNote,
     });
+  }
 
-    await _resyncProofStack(request.athleteId, request.proofId);
+  /// Rebuilds proof-stack stats after coach decisions. Runs as the athlete so
+  /// skill writes stay within Firestore rules.
+  Future<void> syncVerificationStacksForAthlete(String userId) async {
+    final snap = await _verificationRequests
+        .where('athleteId', isEqualTo: userId)
+        .get();
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      if (data['stackResynced'] == true) continue;
+
+      final status = VerificationRequestStatus.fromString(
+        data['status'] as String?,
+      );
+      if (status != VerificationRequestStatus.approved &&
+          status != VerificationRequestStatus.declined) {
+        continue;
+      }
+
+      final proofId = data['proofId'] as String?;
+      if (proofId == null || proofId.isEmpty) continue;
+
+      await _resyncProofStack(userId, proofId);
+      await doc.reference.update({'stackResynced': true});
+    }
   }
 
   Future<void> _resyncProofStack(String userId, String proofId) async {
@@ -1005,6 +1335,613 @@ class FirestoreService {
 
     final stack = _stackContext(skill: skill, skills: skills, proofs: allProofs);
     await _syncSkillEvidence(stack.primary, stack.proofs);
+  }
+
+  // ── Gyms & memberships ────────────────────────────────────────────────────
+
+  Stream<List<GymModel>> watchActiveGyms() {
+    return _gyms
+        .where('status', isEqualTo: GymStatus.active.value)
+        .snapshots()
+        .map((snap) {
+          final gyms = snap.docs.map(GymModel.fromFirestore).toList()
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
+          return gyms;
+        });
+  }
+
+  Future<GymModel?> getGym(String gymId) async {
+    final doc = await _gyms.doc(gymId).get();
+    if (!doc.exists) return null;
+    return GymModel.fromFirestore(doc);
+  }
+
+  Future<bool> isGymHandleAvailable(String handle) async {
+    final doc = await _gymHandles.doc(handle.toLowerCase()).get();
+    return !doc.exists;
+  }
+
+  Future<String> createGym({
+    required String createdBy,
+    required String name,
+    required String handle,
+    String description = '',
+    String address = '',
+    String country = '',
+    String city = '',
+    String website = '',
+    String? logoUrl,
+    String contactEmail = '',
+    String managerName = '',
+    String phone = '',
+  }) async {
+    final normalizedHandle = handle.trim().toLowerCase();
+    if (!await isGymHandleAvailable(normalizedHandle)) {
+      throw StateError('Gym handle is already taken');
+    }
+
+    final gymId = _gyms.doc().id;
+    final now = DateTime.now();
+    final gym = GymModel(
+      id: gymId,
+      name: name.trim(),
+      handle: normalizedHandle,
+      description: description.trim(),
+      address: address.trim(),
+      country: country.trim(),
+      city: city.trim(),
+      website: website.trim(),
+      logoUrl: logoUrl,
+      contactEmail: contactEmail.trim(),
+      managerName: managerName.trim(),
+      phone: phone.trim(),
+      status: GymStatus.active,
+      createdBy: createdBy,
+      createdAt: now,
+    );
+
+    final managerId = GymMembershipModel.membershipDocId(
+      gymId: gymId,
+      userId: createdBy,
+      type: GymMembershipType.manager,
+    );
+    final managerMembership = GymMembershipModel(
+      id: managerId,
+      gymId: gymId,
+      userId: createdBy,
+      membershipType: GymMembershipType.manager,
+      status: GymMembershipStatus.approved,
+      requestedAt: now,
+      reviewedAt: now,
+      reviewedBy: createdBy,
+    );
+
+    final batch = _firestore.batch();
+    batch.set(_gyms.doc(gymId), gym.toFirestore());
+    batch.set(_gymHandles.doc(normalizedHandle), {
+      'gymId': gymId,
+      'createdAt': Timestamp.fromDate(now),
+    });
+    await batch.commit();
+
+    try {
+      await _gymMemberships.doc(managerId).set(managerMembership.toFirestore());
+    } catch (e) {
+      await _gyms.doc(gymId).delete();
+      await _gymHandles.doc(normalizedHandle).delete();
+      rethrow;
+    }
+
+    return gymId;
+  }
+
+  Future<void> updateOnboardingProgress({
+    required String userId,
+    UserRole? accountType,
+    UserRole? role,
+    OnboardingStep? onboardingStep,
+    bool? onboardingCompleted,
+    String? physicalIdentityId,
+    String? coachProfileId,
+    List<String>? managedGymIds,
+    String? primaryGymId,
+    OnboardingDraft? onboardingDraft,
+    bool? hasIdentity,
+    String? specialty,
+  }) async {
+    final updates = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (accountType != null) updates['accountType'] = accountType.value;
+    if (role != null) updates['role'] = role.value;
+    if (specialty != null) updates['specialty'] = specialty;
+    if (onboardingStep != null) updates['onboardingStep'] = onboardingStep.value;
+    if (onboardingCompleted != null) {
+      updates['onboardingCompleted'] = onboardingCompleted;
+    }
+    if (physicalIdentityId != null) {
+      updates['physicalIdentityId'] = physicalIdentityId;
+    }
+    if (coachProfileId != null) updates['coachProfileId'] = coachProfileId;
+    if (managedGymIds != null) updates['managedGymIds'] = managedGymIds;
+    if (primaryGymId != null) updates['primaryGymId'] = primaryGymId;
+    if (onboardingDraft != null) {
+      updates['onboardingDraft'] = onboardingDraft.toMap();
+    }
+    if (hasIdentity != null) updates['hasIdentity'] = hasIdentity;
+    await _userRef(userId).set(updates, SetOptions(merge: true));
+  }
+
+  Future<void> saveOnboardingDraft({
+    required String userId,
+    required OnboardingDraft draft,
+  }) {
+    return updateOnboardingProgress(userId: userId, onboardingDraft: draft);
+  }
+
+  Future<void> setAccountType({
+    required String userId,
+    required UserRole accountType,
+  }) {
+    return updateOnboardingProgress(
+      userId: userId,
+      accountType: accountType,
+      role: accountType,
+      onboardingStep: OnboardingStep.initialStepFor(accountType),
+    );
+  }
+
+  Future<void> createPhysicalIdentityDuringOnboarding({
+    required PhysicalIdentity identity,
+    required UserRole accountType,
+    String? selectedGymId,
+  }) async {
+    final user = await getUser(identity.userId);
+    if (user == null) return;
+
+    if (!user.hasIdentity) {
+      final handle = identity.handle.toLowerCase();
+      final batch = _firestore.batch();
+      batch.set(_identityRef(identity.userId), identity.toFirestore());
+      batch.set(_handles.doc(handle), {'userId': identity.userId});
+      batch.set(
+        _userRef(identity.userId),
+        {
+          'hasIdentity': true,
+          'physicalIdentityId': identity.userId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+      await _recordTimelineMilestones(
+        identity.userId,
+        TimelineMilestoneEvaluator.evaluateIdentityCreated(identity: identity),
+      );
+    } else {
+      await updateIdentity(identity);
+    }
+
+    final nextStep = OnboardingStep.nextAfterPhysicalIdentity(accountType);
+    await updateOnboardingProgress(
+      userId: identity.userId,
+      physicalIdentityId: identity.userId,
+      hasIdentity: true,
+      onboardingStep: nextStep ?? OnboardingStep.completed,
+    );
+
+    if (selectedGymId != null && selectedGymId.isNotEmpty) {
+      await requestGymMembership(
+        gymId: selectedGymId,
+        userId: identity.userId,
+        type: GymMembershipType.athlete,
+      );
+      await updateOnboardingProgress(
+        userId: identity.userId,
+        primaryGymId: selectedGymId,
+      );
+    }
+
+    if (nextStep == OnboardingStep.completed) {
+      await completeOnboarding(userId: identity.userId);
+    }
+  }
+
+  Future<void> createCoachProfileDuringOnboarding({
+    required String userId,
+    required CoachProfile profile,
+    required UserRole accountType,
+    String? selectedGymId,
+    bool reserveHandle = true,
+  }) async {
+    final user = await getUser(userId);
+    if (user == null) return;
+
+    final handle = profile.handle.toLowerCase();
+    final existingProfile = await _coachProfiles.doc(userId).get();
+
+    if (!existingProfile.exists) {
+      final batch = _firestore.batch();
+      batch.set(_coachProfiles.doc(userId), profile.toFirestore());
+      if (reserveHandle && !user.hasIdentity) {
+        batch.set(_handles.doc(handle), {'userId': userId});
+      }
+      await batch.commit();
+    } else {
+      await _coachProfiles.doc(userId).set(profile.toFirestore());
+    }
+
+    final nextStep = OnboardingStep.nextAfterCoachProfile(accountType) ??
+        (accountType == UserRole.athleteAndCoach
+            ? OnboardingStep.selectGym
+            : OnboardingStep.completed);
+    await updateOnboardingProgress(
+      userId: userId,
+      coachProfileId: userId,
+      role: accountType,
+      accountType: accountType,
+      specialty: profile.specialty,
+      onboardingStep: nextStep,
+    );
+
+    if (selectedGymId != null &&
+        selectedGymId.isNotEmpty &&
+        accountType == UserRole.coach) {
+      await requestGymMembership(
+        gymId: selectedGymId,
+        userId: userId,
+        type: GymMembershipType.coach,
+      );
+      await updateOnboardingProgress(
+        userId: userId,
+        primaryGymId: selectedGymId,
+      );
+      await completeOnboarding(userId: userId);
+    } else if (nextStep == OnboardingStep.completed) {
+      await completeOnboarding(userId: userId);
+    }
+  }
+
+  Future<String> completeGymOnboarding({
+    required String createdBy,
+    required GymModel gym,
+  }) async {
+    final existingGymId = (await getUser(createdBy))?.managedGymIds.firstOrNull;
+    if (existingGymId != null) {
+      final existing = await getGym(existingGymId);
+      if (existing != null) {
+        await updateOnboardingProgress(
+          userId: createdBy,
+          role: UserRole.gymManager,
+          accountType: UserRole.gymManager,
+          managedGymIds: [existingGymId],
+          primaryGymId: existingGymId,
+          onboardingStep: OnboardingStep.completed,
+          onboardingCompleted: true,
+        );
+        return existingGymId;
+      }
+    }
+
+    final gymId = await createGym(
+      createdBy: createdBy,
+      name: gym.name,
+      handle: gym.handle,
+      description: gym.description,
+      address: gym.address,
+      country: gym.country,
+      city: gym.city,
+      website: gym.website,
+      logoUrl: gym.logoUrl,
+      contactEmail: gym.contactEmail,
+      managerName: gym.managerName,
+      phone: gym.phone,
+    );
+
+    await updateOnboardingProgress(
+      userId: createdBy,
+      role: UserRole.gymManager,
+      accountType: UserRole.gymManager,
+      managedGymIds: [gymId],
+      primaryGymId: gymId,
+      onboardingStep: OnboardingStep.completed,
+      onboardingCompleted: true,
+    );
+
+    return gymId;
+  }
+
+  Future<void> completeGymSelection({
+    required String userId,
+    required String gymId,
+    required UserRole accountType,
+  }) async {
+    if (accountType.isAthlete) {
+      await requestGymMembership(
+        gymId: gymId,
+        userId: userId,
+        type: GymMembershipType.athlete,
+      );
+    }
+    if (accountType.isCoach) {
+      await requestGymMembership(
+        gymId: gymId,
+        userId: userId,
+        type: GymMembershipType.coach,
+      );
+    }
+    await updateOnboardingProgress(
+      userId: userId,
+      primaryGymId: gymId,
+      onboardingStep: OnboardingStep.completed,
+    );
+    await completeOnboarding(userId: userId);
+  }
+
+  Future<void> completeOnboarding({required String userId}) async {
+    await updateOnboardingProgress(
+      userId: userId,
+      onboardingCompleted: true,
+      onboardingStep: OnboardingStep.completed,
+    );
+  }
+
+  Future<void> updateGym(GymModel gym) async {
+    await _gyms.doc(gym.id).update(gym.toFirestore());
+  }
+
+  Future<void> updateUserProfile({
+    required String userId,
+    UserRole? role,
+    String? specialty,
+    String? primaryGymId,
+    bool? onboardingCompleted,
+  }) async {
+    await updateOnboardingProgress(
+      userId: userId,
+      role: role,
+      specialty: specialty,
+      primaryGymId: primaryGymId,
+      onboardingCompleted: onboardingCompleted,
+      onboardingStep: onboardingCompleted == true
+          ? OnboardingStep.completed
+          : null,
+    );
+  }
+
+  Future<List<GymMembershipModel>> getMembershipsForUser(String userId) async {
+    final snap = await _gymMemberships
+        .where('userId', isEqualTo: userId)
+        .get();
+    return snap.docs.map(GymMembershipModel.fromFirestore).toList();
+  }
+
+  Stream<List<GymMembershipModel>> watchMembershipsForUser(String userId) {
+    return _gymMemberships
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snap) => snap.docs.map(GymMembershipModel.fromFirestore).toList());
+  }
+
+  Stream<List<GymMembershipModel>> watchGymMemberships({
+    required String gymId,
+    GymMembershipType? type,
+    GymMembershipStatus? status,
+  }) {
+    return _gymMemberships
+        .where('gymId', isEqualTo: gymId)
+        .snapshots()
+        .map((snap) => _filterMemberships(
+              snap.docs.map(GymMembershipModel.fromFirestore).toList(),
+              type: type,
+              status: status,
+            ));
+  }
+
+  List<GymMembershipModel> _filterMemberships(
+    List<GymMembershipModel> memberships, {
+    GymMembershipType? type,
+    GymMembershipStatus? status,
+  }) {
+    return memberships.where((membership) {
+      if (type != null && membership.membershipType != type) return false;
+      if (status != null && membership.status != status) return false;
+      return true;
+    }).toList();
+  }
+
+  Future<GymMembershipModel?> getMembership({
+    required String gymId,
+    required String userId,
+    required GymMembershipType type,
+  }) async {
+    final id = GymMembershipModel.membershipDocId(
+      gymId: gymId,
+      userId: userId,
+      type: type,
+    );
+    final doc = await _gymMemberships.doc(id).get();
+    if (!doc.exists) return null;
+    return GymMembershipModel.fromFirestore(doc);
+  }
+
+  Future<GymModel?> getGymByHandle(String handle) async {
+    final normalized = handle.trim().toLowerCase().replaceFirst(RegExp(r'^@'), '');
+    if (normalized.isEmpty) return null;
+
+    final doc = await _gymHandles.doc(normalized).get();
+    if (!doc.exists) return null;
+
+    final gymId = doc.data()?['gymId'] as String?;
+    if (gymId == null || gymId.isEmpty) return null;
+
+    return getGym(gymId);
+  }
+
+  Future<GymMembershipRequestResult> requestGymMembership({
+    required String gymId,
+    required String userId,
+    required GymMembershipType type,
+  }) async {
+    final authUid = _auth.currentUser?.uid;
+    if (authUid == null) {
+      throw StateError('You must be signed in to request gym membership.');
+    }
+    if (authUid != userId) {
+      throw StateError('Signed-in account does not match the active user.');
+    }
+
+    final id = GymMembershipModel.membershipDocId(
+      gymId: gymId,
+      userId: authUid,
+      type: type,
+    );
+    final payload = GymMembershipModel(
+      id: id,
+      gymId: gymId,
+      userId: authUid,
+      membershipType: type,
+      status: GymMembershipStatus.pending,
+      requestedAt: DateTime.now(),
+    ).toFirestore();
+
+    DocumentSnapshot<Map<String, dynamic>>? existing;
+    try {
+      existing = await _gymMemberships.doc(id).get();
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
+      existing = null;
+    }
+
+    if (existing?.exists == true) {
+      final current = GymMembershipModel.fromFirestore(existing!);
+      if (current.status == GymMembershipStatus.pending) {
+        return GymMembershipRequestResult.alreadyPending;
+      }
+      if (current.status == GymMembershipStatus.approved) {
+        return GymMembershipRequestResult.alreadyApproved;
+      }
+
+      await _gymMemberships.doc(id).update({
+        ...payload,
+        'requestedAt': FieldValue.serverTimestamp(),
+        'reviewedAt': FieldValue.delete(),
+        'reviewedBy': FieldValue.delete(),
+      });
+      return GymMembershipRequestResult.created;
+    }
+
+    await _gymMemberships.doc(id).set(payload);
+    return GymMembershipRequestResult.created;
+  }
+
+  Future<void> reviewGymMembership({
+    required String membershipId,
+    required GymMembershipStatus status,
+    required String reviewedBy,
+  }) async {
+    final doc = await _gymMemberships.doc(membershipId).get();
+    if (!doc.exists) return;
+
+    final membership = GymMembershipModel.fromFirestore(doc);
+    await _gymMemberships.doc(membershipId).update({
+      'status': status.value,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'reviewedBy': reviewedBy,
+    });
+
+    if (status == GymMembershipStatus.removed ||
+        status == GymMembershipStatus.rejected ||
+        status == GymMembershipStatus.suspended) {
+      await _cancelPendingVerificationsForMembership(membership);
+    }
+  }
+
+  Future<void> _cancelPendingVerificationsForMembership(
+    GymMembershipModel membership,
+  ) async {
+    Query<Map<String, dynamic>> query;
+    if (membership.membershipType == GymMembershipType.athlete) {
+      query = _verificationRequests.where(
+        'athleteId',
+        isEqualTo: membership.userId,
+      );
+    } else if (membership.membershipType == GymMembershipType.coach) {
+      query = _verificationRequests.where(
+        'coachId',
+        isEqualTo: membership.userId,
+      );
+    } else {
+      return;
+    }
+
+    final snap = await query.get();
+    final pending = snap.docs
+        .map(VerificationRequestModel.fromFirestore)
+        .where(
+          (request) =>
+              request.status == VerificationRequestStatus.pending &&
+              request.gymId == membership.gymId,
+        )
+        .toList();
+
+    for (final request in pending) {
+      await _verificationRequests.doc(request.id).update({
+        'status': VerificationRequestStatus.cancelled.value,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      });
+      await _proofsRef(request.athleteId).doc(request.proofId).update({
+        'verificationStatus': VerificationStatus.selfReported.value,
+        'proofSource': ProofSource.selfReported.value,
+      });
+    }
+  }
+
+  Future<List<GymMembershipModel>> getApprovedCoachesForGym(
+    String gymId,
+  ) async {
+    final snap = await _gymMemberships
+        .where('gymId', isEqualTo: gymId)
+        .where('membershipType', isEqualTo: GymMembershipType.coach.value)
+        .where('status', isEqualTo: GymMembershipStatus.approved.value)
+        .get();
+    return snap.docs.map(GymMembershipModel.fromFirestore).toList();
+  }
+
+  Future<List<GymModel>> getGymsManagedByUser(String userId) async {
+    final snap = await _gymMemberships
+        .where('userId', isEqualTo: userId)
+        .get();
+    final managerMemberships = _filterMemberships(
+      snap.docs.map(GymMembershipModel.fromFirestore).toList(),
+      type: GymMembershipType.manager,
+      status: GymMembershipStatus.approved,
+    );
+    final gyms = <GymModel>[];
+    for (final membership in managerMemberships) {
+      final gym = await getGym(membership.gymId);
+      if (gym != null) gyms.add(gym);
+    }
+    gyms.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return gyms;
+  }
+
+  GymMembershipModel? approvedAthleteMembershipForGym({
+    required List<GymMembershipModel> memberships,
+    required String gymId,
+  }) {
+    for (final membership in memberships) {
+      if (membership.gymId == gymId &&
+          membership.membershipType == GymMembershipType.athlete &&
+          membership.status == GymMembershipStatus.approved) {
+        return membership;
+      }
+    }
+    return null;
   }
 }
 

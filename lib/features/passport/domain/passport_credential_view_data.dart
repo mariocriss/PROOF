@@ -1,4 +1,5 @@
 import 'package:proof/core/utils/confidence_progress_segments.dart';
+import 'package:proof/core/utils/identity_badge_evaluator.dart';
 import 'package:proof/core/utils/identity_confidence_calculator.dart';
 import 'package:proof/core/utils/date_utils.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
@@ -21,6 +22,7 @@ class PassportCredentialViewData {
     required this.filledSegments,
     required this.trustIndicators,
     required this.publicUrl,
+    required this.featuredBadgeLabels,
   });
 
   final PhysicalIdentity identity;
@@ -32,6 +34,7 @@ class PassportCredentialViewData {
   final int filledSegments;
   final PassportTrustIndicators trustIndicators;
   final String publicUrl;
+  final List<String> featuredBadgeLabels;
 
   factory PassportCredentialViewData.build({
     required PhysicalIdentity identity,
@@ -51,6 +54,13 @@ class PassportCredentialViewData {
     final summaries = ProofStackMerge.buildSummaries(
       skills: skills,
       proofs: proofs,
+    );
+
+    final featuredBadges = IdentityBadgeEvaluator.curatedForPassport(
+      identity: identity,
+      skills: skills,
+      proofs: proofs,
+      asOf: clock(),
     );
 
     return PassportCredentialViewData(
@@ -73,6 +83,7 @@ class PassportCredentialViewData {
         now: clock(),
       ),
       publicUrl: publicUrl,
+      featuredBadgeLabels: featuredBadges.map((b) => b.label).toList(),
     );
   }
 

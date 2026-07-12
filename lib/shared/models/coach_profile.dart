@@ -9,6 +9,8 @@ class CoachProfile {
     required this.updatedAt,
     this.bio = '',
     this.avatarUrl,
+    this.country = '',
+    this.qualifications = '',
     this.athleteCount = 0,
     this.verifiedProofCount = 0,
   });
@@ -19,6 +21,8 @@ class CoachProfile {
   final String specialty;
   final String bio;
   final String? avatarUrl;
+  final String country;
+  final String qualifications;
   final int athleteCount;
   final int verifiedProofCount;
   final DateTime updatedAt;
@@ -34,6 +38,8 @@ class CoachProfile {
       specialty: data['specialty'] as String? ?? 'Coach',
       bio: data['bio'] as String? ?? '',
       avatarUrl: data['avatarUrl'] as String?,
+      country: data['country'] as String? ?? '',
+      qualifications: data['qualifications'] as String? ?? '',
       athleteCount: data['athleteCount'] as int? ?? 0,
       verifiedProofCount: data['verifiedProofCount'] as int? ?? 0,
       updatedAt:
@@ -48,6 +54,8 @@ class CoachProfile {
       'specialty': specialty,
       'bio': bio,
       'avatarUrl': avatarUrl,
+      'country': country,
+      'qualifications': qualifications,
       'athleteCount': athleteCount,
       'verifiedProofCount': verifiedProofCount,
       'updatedAt': Timestamp.fromDate(updatedAt),
