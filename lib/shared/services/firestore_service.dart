@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:proof/core/constants/firestore_paths.dart';
 import 'package:proof/core/utils/gym_verification_validator.dart';
@@ -130,6 +131,7 @@ class FirestoreService {
     await _deleteCollection(_proofsRef(userId));
     await _deleteCollection(_timelineRef(userId));
     await _identityRef(userId).delete();
+    await _publicProfiles.doc(userId).delete();
     await _userRef(userId).delete();
   }
 
@@ -878,9 +880,29 @@ class FirestoreService {
   // ── Public profiles (people discovery) ──────────────────────────────────
 
   Future<PublicProfileModel?> getPublicProfile(String userId) async {
-    final doc = await _publicProfiles.doc(userId).get();
-    if (!doc.exists) return null;
-    return PublicProfileModel.fromFirestore(doc);
+    try {
+      final doc = await _publicProfiles.doc(userId).get();
+      if (!doc.exists) return null;
+      return PublicProfileModel.fromFirestore(doc);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return null;
+      rethrow;
+    }
+  }
+
+  /// Loads a profile for friends/requests, falling back to identity when needed.
+  Future<PublicProfileModel?> getFriendDisplayProfile(String userId) async {
+    final publicProfile = await getPublicProfile(userId);
+    if (publicProfile != null) return publicProfile;
+
+    try {
+      final identity = await getIdentity(userId);
+      if (identity == null) return null;
+      return PublicProfileModel.fromIdentity(identity);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return null;
+      rethrow;
+    }
   }
 
   Stream<List<PublicProfileModel>> watchSearchablePublicProfiles() {
@@ -893,49 +915,119 @@ class FirestoreService {
         );
   }
 
+  Future<List<PublicProfileModel>> searchPublicProfilesByHandlePrefix(
+    String prefix,
+  ) async {
+    final normalized = prefix.trim().toLowerCase();
+    if (normalized.length < 2) return [];
+
+    final end = '$normalized\uf8ff';
+    final results = <String, PublicProfileModel>{};
+
+    Future<void> queryField(String field) async {
+      final snap = await _publicProfiles
+          .where('searchable', isEqualTo: true)
+          .where(field, isGreaterThanOrEqualTo: normalized)
+          .where(field, isLessThan: end)
+          .limit(20)
+          .get();
+      for (final doc in snap.docs) {
+        results[doc.id] = PublicProfileModel.fromFirestore(doc);
+      }
+    }
+
+    await queryField('handleLowercase');
+    await queryField('handle');
+
+    final handleSnap = await _handles
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: normalized)
+        .where(FieldPath.documentId, isLessThan: end)
+        .limit(20)
+        .get();
+
+    for (final doc in handleSnap.docs) {
+      final userId = doc.data()['userId'] as String?;
+      if (userId == null || results.containsKey(userId)) continue;
+
+      final profile = await getFriendDisplayProfile(userId);
+      if (profile != null && profile.searchable) {
+        results[userId] = profile;
+      }
+    }
+
+    return results.values.toList()
+      ..sort((a, b) {
+        final aHandle =
+            a.handleLowercase.isNotEmpty ? a.handleLowercase : a.handle.toLowerCase();
+        final bHandle =
+            b.handleLowercase.isNotEmpty ? b.handleLowercase : b.handle.toLowerCase();
+        return aHandle.compareTo(bHandle);
+      });
+  }
+
+  Future<PublicProfileModel?> lookupPublicProfileByHandle(String handle) async {
+    final userId = await resolveUserIdByHandle(handle);
+    if (userId == null) return null;
+    return getFriendDisplayProfile(userId);
+  }
+
   Future<void> syncPublicProfile(String userId) async {
     final identity = await getIdentity(userId);
-    if (identity == null || !identity.isPublic) {
+
+    if (identity != null && identity.isPublic) {
+      final skillsSnap = await _skillsRef(userId).get();
+      final skills = skillsSnap.docs
+          .map(SkillModel.fromFirestore)
+          .where((s) => s.status == SkillStatus.active)
+          .toList()
+        ..sort((a, b) {
+          final aConf = a.stackConfidence?.value ?? '';
+          final bConf = b.stackConfidence?.value ?? '';
+          return bConf.compareTo(aConf);
+        });
+
+      final topSkills = skills.take(3).map((skill) {
+        final result = skill.formattedCurrentBest ?? skill.name;
+        return PublicTopSkill(name: skill.name, resultLabel: result);
+      }).toList();
+
+      final identityStatus = skills.isEmpty
+          ? 'Starting'
+          : (skills.first.stackConfidence?.label ?? 'Developing');
+
+      final profile = PublicProfileModel(
+        userId: userId,
+        displayName: identity.displayName,
+        displayNameLowercase: identity.displayName.toLowerCase(),
+        handle: identity.handle,
+        handleLowercase: identity.handle.toLowerCase(),
+        avatarUrl: identity.avatarUrl,
+        city: identity.location,
+        bio: identity.bio,
+        identityStatus: identityStatus,
+        publicTopSkills: topSkills,
+        searchable: true,
+        updatedAt: DateTime.now(),
+      );
+
+      await _publicProfiles.doc(userId).set(profile.toFirestore());
+      return;
+    }
+
+    if (identity != null && !identity.isPublic) {
       await _publicProfiles.doc(userId).delete();
       return;
     }
 
-    final skillsSnap = await _skillsRef(userId).get();
-    final skills = skillsSnap.docs
-        .map(SkillModel.fromFirestore)
-        .where((s) => s.status == SkillStatus.active)
-        .toList()
-      ..sort((a, b) {
-        final aConf = a.stackConfidence?.value ?? '';
-        final bConf = b.stackConfidence?.value ?? '';
-        return bConf.compareTo(aConf);
-      });
+    final coachProfile = await getCoachProfile(userId);
+    if (coachProfile != null && coachProfile.handle.isNotEmpty) {
+      await _publicProfiles
+          .doc(userId)
+          .set(PublicProfileModel.fromCoachProfile(coachProfile).toFirestore());
+      return;
+    }
 
-    final topSkills = skills.take(3).map((skill) {
-      final result = skill.formattedCurrentBest ?? skill.name;
-      return PublicTopSkill(name: skill.name, resultLabel: result);
-    }).toList();
-
-    final identityStatus = skills.isEmpty
-        ? 'Starting'
-        : (skills.first.stackConfidence?.label ?? 'Developing');
-
-    final profile = PublicProfileModel(
-      userId: userId,
-      displayName: identity.displayName,
-      displayNameLowercase: identity.displayName.toLowerCase(),
-      handle: identity.handle,
-      handleLowercase: identity.handle.toLowerCase(),
-      avatarUrl: identity.avatarUrl,
-      city: identity.location,
-      bio: identity.bio,
-      identityStatus: identityStatus,
-      publicTopSkills: topSkills,
-      searchable: true,
-      updatedAt: DateTime.now(),
-    );
-
-    await _publicProfiles.doc(userId).set(profile.toFirestore());
+    await _publicProfiles.doc(userId).delete();
   }
 
   Future<PublicProfileModel?> getOrSyncPublicProfileByHandle(
@@ -943,8 +1035,14 @@ class FirestoreService {
   ) async {
     final userId = await resolveUserIdByHandle(handle);
     if (userId == null) return null;
-    await syncPublicProfile(userId);
-    return getPublicProfile(userId);
+
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == userId) {
+      await syncPublicProfile(userId);
+      return getPublicProfile(userId);
+    }
+
+    return getFriendDisplayProfile(userId);
   }
 
   // ── Relationships ─────────────────────────────────────────────────────────
@@ -995,24 +1093,37 @@ class FirestoreService {
     String userIdA,
     String userIdB,
   ) async {
-    final docId = RelationshipModel.friendDocId(userIdA, userIdB);
-    final direct = await _relationships.doc(docId).get();
-    if (direct.exists) {
-      return RelationshipModel.fromFirestore(direct);
+    // IMPORTANT:
+    // 1) Never `.doc(id).get()` a relationship that may not exist — rules deny.
+    // 2) Never query with `whereIn: [userIdA, userIdB]` — that can return docs
+    //    the current user cannot read, and Firestore denies the whole query.
+    // Only query relationships where the current user is a guaranteed participant.
+
+    RelationshipModel? matchForPair(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    ) {
+      for (final doc in docs) {
+        final model = RelationshipModel.fromFirestore(doc);
+        final matchesPair =
+            (model.fromUserId == userIdA && model.toUserId == userIdB) ||
+                (model.fromUserId == userIdB && model.toUserId == userIdA);
+        if (matchesPair) return model;
+      }
+      return null;
     }
 
-    final legacy = await _relationships
+    final sent = await _relationships
         .where('type', isEqualTo: RelationshipType.friend.value)
-        .where('fromUserId', whereIn: [userIdA, userIdB])
+        .where('fromUserId', isEqualTo: userIdA)
         .get();
+    final sentMatch = matchForPair(sent.docs);
+    if (sentMatch != null) return sentMatch;
 
-    for (final doc in legacy.docs) {
-      final model = RelationshipModel.fromFirestore(doc);
-      final matchesPair = (model.fromUserId == userIdA && model.toUserId == userIdB) ||
-          (model.fromUserId == userIdB && model.toUserId == userIdA);
-      if (matchesPair) return model;
-    }
-    return null;
+    final received = await _relationships
+        .where('type', isEqualTo: RelationshipType.friend.value)
+        .where('toUserId', isEqualTo: userIdA)
+        .get();
+    return matchForPair(received.docs);
   }
 
   Future<void> sendFriendRequest({
@@ -1021,22 +1132,24 @@ class FirestoreService {
   }) async {
     final existing = await findFriendRelationship(fromUserId, toUserId);
 
-    final reversePending = existing == null
-        ? await _relationships
-            .where('fromUserId', isEqualTo: toUserId)
-            .where('toUserId', isEqualTo: fromUserId)
-            .where('type', isEqualTo: RelationshipType.friend.value)
-            .where('status', isEqualTo: RelationshipStatus.pending.value)
-            .limit(1)
-            .get()
-        : null;
+    final reversePendingExists = existing == null
+        ? (await _relationships
+                .where('type', isEqualTo: RelationshipType.friend.value)
+                .where('toUserId', isEqualTo: fromUserId)
+                .where('status', isEqualTo: RelationshipStatus.pending.value)
+                .get())
+            .docs
+            .any(
+              (doc) =>
+                  RelationshipModel.fromFirestore(doc).fromUserId == toUserId,
+            )
+        : false;
 
     final action = FriendRequestPolicy.decide(
       fromUserId: fromUserId,
       toUserId: toUserId,
       existing: existing,
-      reversePendingExists:
-          reversePending != null && reversePending.docs.isNotEmpty,
+      reversePendingExists: reversePendingExists,
     );
 
     switch (action) {
@@ -1044,7 +1157,15 @@ class FirestoreService {
         return;
       case FriendRequestAction.acceptExisting:
         final relationshipId = existing?.id ??
-            reversePending!.docs.first.id;
+            (await _relationships
+                    .where('type', isEqualTo: RelationshipType.friend.value)
+                    .where('toUserId', isEqualTo: fromUserId)
+                    .where('status', isEqualTo: RelationshipStatus.pending.value)
+                    .get())
+                .docs
+                .map(RelationshipModel.fromFirestore)
+                .firstWhere((model) => model.fromUserId == toUserId)
+                .id;
         await respondToRelationship(
           relationshipId: relationshipId,
           accept: true,
@@ -1694,6 +1815,7 @@ class FirestoreService {
         SetOptions(merge: true),
       );
       await batch.commit();
+      await syncPublicProfile(identity.userId);
       await _recordTimelineMilestones(
         identity.userId,
         TimelineMilestoneEvaluator.evaluateIdentityCreated(identity: identity),
@@ -1750,6 +1872,8 @@ class FirestoreService {
     } else {
       await _coachProfiles.doc(userId).set(profile.toFirestore());
     }
+
+    await syncPublicProfile(userId);
 
     final nextStep = OnboardingStep.nextAfterCoachProfile(accountType) ??
         (accountType == UserRole.athleteAndCoach
@@ -1859,6 +1983,7 @@ class FirestoreService {
   }
 
   Future<void> completeOnboarding({required String userId}) async {
+    await syncPublicProfile(userId);
     await updateOnboardingProgress(
       userId: userId,
       onboardingCompleted: true,

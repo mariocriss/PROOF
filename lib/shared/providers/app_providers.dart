@@ -54,6 +54,7 @@ final currentUserProvider = StreamProvider<UserModel?>((ref) async* {
   }
   final service = ref.watch(firestoreServiceProvider);
   await service.migrateOnboardingIfNeeded(user.uid);
+  await service.syncPublicProfile(user.uid);
   yield* service.watchUser(user.uid);
 });
 

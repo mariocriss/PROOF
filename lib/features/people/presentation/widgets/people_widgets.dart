@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/people/domain/friend_connection_state.dart';
 import 'package:proof/shared/models/coach_profile.dart';
@@ -500,13 +501,37 @@ class FriendConnectionButton extends ConsumerWidget {
   }
 
   Future<void> _sendRequest(BuildContext context, WidgetRef ref) async {
-    final fromUserId = ref.read(authStateProvider).valueOrNull?.uid;
-    if (fromUserId == null) return;
-
-    await ref.read(firestoreServiceProvider).sendFriendRequest(
-          fromUserId: fromUserId,
-          toUserId: profile.userId,
+    final fromUserId = userId;
+    if (fromUserId == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please wait… signing you in.')),
         );
+      }
+      return;
+    }
+
+    try {
+      await ref.read(firestoreServiceProvider).sendFriendRequest(
+            fromUserId: fromUserId,
+            toUserId: profile.userId,
+          );
+    } on FirebaseException catch (e) {
+      if (context.mounted) {
+        final message = e.message?.isNotEmpty == true ? e.message! : e.toString();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send request (${e.code}): $message')),
+        );
+      }
+      return;
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send request: $e')),
+        );
+      }
+      return;
+    }
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -29,8 +29,28 @@ final relationshipsProvider = StreamProvider<List<RelationshipModel>>((ref) {
 });
 
 final searchablePublicProfilesProvider =
-    StreamProvider<List<PublicProfileModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).watchSearchablePublicProfiles();
+    StreamProvider<List<PublicProfileModel>>((ref) async* {
+  final user = ref.watch(authStateProvider).valueOrNull;
+  if (user == null) {
+    yield const <PublicProfileModel>[];
+    return;
+  }
+
+  await ref.watch(dataBootstrapProvider(user.uid).future);
+  yield* ref.watch(firestoreServiceProvider).watchSearchablePublicProfiles();
+});
+
+final peopleHandlePrefixSearchProvider =
+    FutureProvider.autoDispose.family<List<PublicProfileModel>, String>(
+        (ref, query) async {
+  if (!PeopleSearch.shouldSearch(query)) return [];
+
+  final handleQuery = PeopleSearch.handleFromQuery(query);
+  if (handleQuery.contains(' ')) return [];
+
+  return ref
+      .read(firestoreServiceProvider)
+      .searchPublicProfilesByHandlePrefix(handleQuery);
 });
 
 final peopleSearchResultsProvider =
@@ -39,10 +59,19 @@ final peopleSearchResultsProvider =
   final profiles = ref.watch(searchablePublicProfilesProvider).valueOrNull ?? [];
   final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
   final blockedIds = blockedUserIds(relationships, userId);
+  final prefixMatches =
+      ref.watch(peopleHandlePrefixSearchProvider(query)).valueOrNull ?? [];
 
-  return PeopleSearch.filterProfiles(
+  final filtered = PeopleSearch.filterProfiles(
     profiles,
     query,
+    currentUserId: userId,
+    blockedUserIds: blockedIds,
+  );
+
+  return PeopleSearch.mergeResults(
+    filtered: filtered,
+    extra: prefixMatches,
     currentUserId: userId,
     blockedUserIds: blockedIds,
   );
@@ -51,6 +80,11 @@ final peopleSearchResultsProvider =
 final publicProfileProvider =
     FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, userId) {
   return ref.watch(firestoreServiceProvider).getPublicProfile(userId);
+});
+
+final friendDisplayProfileProvider =
+    FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, userId) {
+  return ref.watch(firestoreServiceProvider).getFriendDisplayProfile(userId);
 });
 
 final publicProfileByHandleProvider =

@@ -23,6 +23,8 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
   late int _tab;
   final _discoverController = TextEditingController();
   final _friendsController = TextEditingController();
+  PublicProfileModel? _handleMatch;
+  bool _handleLookupInFlight = false;
 
   @override
   void initState() {
@@ -44,6 +46,35 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
     final userId = ref.read(authStateProvider).valueOrNull?.uid;
     if (userId == null) return;
     ref.read(firestoreServiceProvider).markIncomingFriendRequestsSeen(userId);
+  }
+
+  Future<void> _lookupHandle(String query) async {
+    final handle = PeopleSearch.handleFromQuery(query);
+    final shouldLookup = query.trim().startsWith('@') && handle.isNotEmpty;
+    if (!shouldLookup) {
+      if (_handleMatch != null || _handleLookupInFlight) {
+        setState(() {
+          _handleMatch = null;
+          _handleLookupInFlight = false;
+        });
+      }
+      return;
+    }
+
+    setState(() => _handleLookupInFlight = true);
+    final profile = await ref
+        .read(firestoreServiceProvider)
+        .lookupPublicProfileByHandle(handle);
+    if (!mounted) return;
+    setState(() {
+      _handleMatch = profile;
+      _handleLookupInFlight = false;
+    });
+  }
+
+  void _onDiscoverQueryChanged(String value) {
+    setState(() {});
+    _lookupHandle(value);
   }
 
   @override
@@ -80,7 +111,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
           if (_tab == 0) ...[
             TextField(
               controller: _discoverController,
-              onChanged: (_) => setState(() {}),
+              onChanged: _onDiscoverQueryChanged,
               decoration: InputDecoration(
                 hintText: 'Search by name or @handle',
                 prefixIcon: const Icon(Icons.search),
@@ -95,8 +126,10 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
             const SizedBox(height: 16),
             profilesAsync.when(
               loading: () => const _StatusCard(message: 'Searching…'),
-              error: (e, _) =>
-                  const _StatusCard(message: 'Could not load people. Try again.'),
+              error: (e, _) => _StatusCard(
+                title: 'Could not load people',
+                message: e.toString(),
+              ),
               data: (_) {
                 if (!PeopleSearch.shouldSearch(discoverQuery)) {
                   return const _StatusCard(
@@ -104,8 +137,21 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
                   );
                 }
 
-                final results =
-                    ref.watch(peopleSearchResultsProvider(discoverQuery));
+                final results = PeopleSearch.mergeResults(
+                  filtered:
+                      ref.watch(peopleSearchResultsProvider(discoverQuery)),
+                  extra: const [],
+                  handleMatch: _handleMatch,
+                  currentUserId: userId ?? '',
+                  blockedUserIds: userId == null
+                      ? const {}
+                      : blockedUserIds(relationships, userId),
+                );
+
+                if (_handleLookupInFlight) {
+                  return const _StatusCard(message: 'Searching…');
+                }
+
                 if (results.isEmpty) {
                   return const _StatusCard(
                     title: 'No people found',
@@ -176,7 +222,7 @@ class _FriendRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(publicProfileProvider(userId));
+    final profileAsync = ref.watch(friendDisplayProfileProvider(userId));
 
     return profileAsync.when(
       loading: () => const LinearProgressIndicator(),
@@ -405,7 +451,7 @@ class _FriendRequestCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final otherId =
         incoming ? relationship.fromUserId : relationship.toUserId;
-    final profileAsync = ref.watch(publicProfileProvider(otherId));
+    final profileAsync = ref.watch(friendDisplayProfileProvider(otherId));
 
     return profileAsync.when(
       loading: () => const LinearProgressIndicator(),

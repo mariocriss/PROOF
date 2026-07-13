@@ -3,32 +3,62 @@ import 'package:proof/features/people/domain/people_search.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
 
 void main() {
+  PublicProfileModel profile({
+    required String userId,
+    required String displayName,
+    required String handle,
+    String city = '',
+    String displayNameLowercase = '',
+    String handleLowercase = '',
+  }) {
+    return PublicProfileModel(
+      userId: userId,
+      displayName: displayName,
+      handle: handle,
+      displayNameLowercase: displayNameLowercase,
+      handleLowercase: handleLowercase,
+      city: city,
+      updatedAt: DateTime(2026),
+    );
+  }
+
   final profiles = [
-    PublicProfileModel(
+    profile(
       userId: '1',
       displayName: 'Mario Rossi',
       handle: 'mario',
       displayNameLowercase: 'mario rossi',
       handleLowercase: 'mario',
       city: 'Rotterdam',
-      updatedAt: DateTime(2026),
     ),
-    PublicProfileModel(
+    profile(
       userId: '2',
       displayName: 'Chris Coach',
       handle: 'chris',
       displayNameLowercase: 'chris coach',
       handleLowercase: 'chris',
       city: 'Amsterdam',
-      updatedAt: DateTime(2026),
     ),
-    PublicProfileModel(
+    profile(
+      userId: '3',
+      displayName: 'Tessa Kiers',
+      handle: 'tessakiers',
+      displayNameLowercase: 'tessa kiers',
+      handleLowercase: 'tessakiers',
+      city: 'Utrecht',
+    ),
+    profile(
+      userId: '4',
+      displayName: 'Legacy User',
+      handle: 'legacyuser',
+      city: 'Rotterdam',
+    ),
+    profile(
       userId: 'self',
       displayName: 'Me',
       handle: 'me',
       displayNameLowercase: 'me',
       handleLowercase: 'me',
-      updatedAt: DateTime(2026),
     ),
   ];
 
@@ -72,8 +102,61 @@ void main() {
           profiles,
           'rotterdam',
           currentUserId: 'self',
+        ).map((p) => p.handle),
+        ['legacyuser', 'mario'],
+      );
+    });
+
+    test('short queries do not match city substrings', () {
+      expect(
+        PeopleSearch.filterProfiles(
+          profiles,
+          'te',
+          currentUserId: 'self',
+        ).map((p) => p.handle),
+        ['tessakiers'],
+      );
+    });
+
+    test('partial handle search finds tessakiers', () {
+      expect(
+        PeopleSearch.filterProfiles(
+          profiles,
+          'tessa',
+          currentUserId: 'self',
         ).single.handle,
-        'mario',
+        'tessakiers',
+      );
+    });
+
+    test('falls back to handle when lowercase fields are missing', () {
+      expect(
+        PeopleSearch.filterProfiles(
+          profiles,
+          'legacy',
+          currentUserId: 'self',
+        ).single.handle,
+        'legacyuser',
+      );
+    });
+
+    test('multi-token search requires every token to match', () {
+      expect(
+        PeopleSearch.filterProfiles(
+          profiles,
+          'tessa utrecht',
+          currentUserId: 'self',
+        ).single.handle,
+        'tessakiers',
+      );
+
+      expect(
+        PeopleSearch.filterProfiles(
+          profiles,
+          'ik tessa',
+          currentUserId: 'self',
+        ),
+        isEmpty,
       );
     });
 
@@ -96,6 +179,23 @@ void main() {
         ),
         isEmpty,
       );
+    });
+
+    test('mergeResults adds exact handle lookup once', () {
+      final handleMatch = profiles[2];
+      final merged = PeopleSearch.mergeResults(
+        filtered: PeopleSearch.filterProfiles(
+          profiles,
+          'tessa',
+          currentUserId: 'self',
+        ),
+        extra: const [],
+        handleMatch: handleMatch,
+        currentUserId: 'self',
+      );
+
+      expect(merged.first.handle, 'tessakiers');
+      expect(merged.where((p) => p.userId == '3').length, 1);
     });
   });
 }

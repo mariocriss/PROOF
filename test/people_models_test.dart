@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:proof/shared/models/coach_profile.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
 import 'package:proof/shared/models/relationship_model.dart';
 
@@ -82,6 +83,25 @@ void main() {
       final restored = PublicTopSkill.fromMap(skill.toMap());
       expect(restored.name, 'Push-ups');
       expect(restored.resultLabel, '35 reps');
+    });
+
+    test('fromCoachProfile creates searchable discover profile', () {
+      final profile = PublicProfileModel.fromCoachProfile(
+        CoachProfile(
+          userId: 'coach-1',
+          handle: 'tessakiers',
+          displayName: 'Tessa Kiers',
+          specialty: 'Coach',
+          country: 'Netherlands',
+          bio: 'Strength coach',
+          updatedAt: DateTime(2026, 3, 1),
+        ),
+      );
+
+      expect(profile.searchable, isTrue);
+      expect(profile.handleLowercase, 'tessakiers');
+      expect(profile.displayNameLowercase, 'tessa kiers');
+      expect(profile.city, 'Netherlands');
     });
   });
 }

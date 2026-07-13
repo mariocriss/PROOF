@@ -24,3 +24,23 @@ jobs:
 
       - name: Run tests
         run: flutter test
+
+  firestore-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: firestore-rules-test/package-lock.json
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Install rules test dependencies
+        run: npm install --prefix firestore-rules-test
+
+      - name: Run Firestore rules tests
+        run: firebase emulators:exec --only firestore --project proof-e913a-rules-test "npm test --prefix firestore-rules-test"

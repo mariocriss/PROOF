@@ -1,6 +1,22 @@
 {
   "indexes": [
     {
+      "collectionGroup": "publicProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "searchable", "order": "ASCENDING" },
+        { "fieldPath": "handleLowercase", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "publicProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "searchable", "order": "ASCENDING" },
+        { "fieldPath": "handle", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "gyms",
       "queryScope": "COLLECTION",
       "fields": [

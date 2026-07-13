@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:proof/shared/models/coach_profile.dart';
+import 'package:proof/shared/models/physical_identity.dart';
 
 class PublicTopSkill {
   const PublicTopSkill({
@@ -62,12 +64,16 @@ class PublicProfileModel {
   ) {
     final data = doc.data()!;
     final skillsRaw = data['publicTopSkills'] as List<dynamic>? ?? [];
+    final handle = data['handle'] as String? ?? '';
+    final displayName = data['displayName'] as String? ?? '';
     return PublicProfileModel(
       userId: doc.id,
-      displayName: data['displayName'] as String? ?? '',
-      handle: data['handle'] as String? ?? '',
-      displayNameLowercase: data['displayNameLowercase'] as String? ?? '',
-      handleLowercase: data['handleLowercase'] as String? ?? '',
+      displayName: displayName,
+      handle: handle,
+      displayNameLowercase:
+          data['displayNameLowercase'] as String? ?? displayName.toLowerCase(),
+      handleLowercase:
+          data['handleLowercase'] as String? ?? handle.toLowerCase(),
       avatarUrl: data['avatarUrl'] as String?,
       city: data['city'] as String? ?? '',
       bio: data['bio'] as String? ?? '',
@@ -81,6 +87,37 @@ class PublicProfileModel {
       searchable: data['searchable'] as bool? ?? true,
       updatedAt:
           (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  factory PublicProfileModel.fromIdentity(PhysicalIdentity identity) {
+    return PublicProfileModel(
+      userId: identity.userId,
+      displayName: identity.displayName,
+      displayNameLowercase: identity.displayName.toLowerCase(),
+      handle: identity.handle,
+      handleLowercase: identity.handle.toLowerCase(),
+      avatarUrl: identity.avatarUrl,
+      city: identity.location,
+      bio: identity.bio,
+      searchable: identity.isPublic,
+      updatedAt: identity.updatedAt,
+    );
+  }
+
+  factory PublicProfileModel.fromCoachProfile(CoachProfile coach) {
+    return PublicProfileModel(
+      userId: coach.userId,
+      displayName: coach.displayName,
+      displayNameLowercase: coach.displayName.toLowerCase(),
+      handle: coach.handle,
+      handleLowercase: coach.handle.toLowerCase(),
+      avatarUrl: coach.avatarUrl,
+      city: coach.country,
+      bio: coach.bio,
+      identityStatus: coach.specialty,
+      searchable: true,
+      updatedAt: coach.updatedAt,
     );
   }
 
