@@ -1119,12 +1119,12 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
       await ref.read(firestoreServiceProvider).addSkill(skill);
       if (!mounted) return;
 
-      context.pushReplacement(
+      context.go(
         Uri(
           path: '/proofs/add',
           queryParameters: {
             'skillId': skill.id,
-            'result': resultRaw,
+            if (resultRaw.isNotEmpty) 'result': resultRaw,
             'unit': _selectedUnit,
             'first': 'true',
           },

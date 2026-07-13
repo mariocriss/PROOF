@@ -220,8 +220,8 @@ class MoreScreen extends ConsumerWidget {
                   MoreMenuRow(
                     icon: Icons.person_outline,
                     title: 'Edit Profile',
-                    subtitle: 'Update your public profile',
-                    onTap: () => context.push('/profile/edit'),
+                    subtitle: 'Name, handle, bio, and location',
+                    onTap: () => context.push('/edit-profile'),
                   ),
                   MoreMenuRow(
                     icon: Icons.lock_outline,

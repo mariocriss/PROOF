@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/people/domain/friend_connection_state.dart';
 import 'package:proof/features/people/presentation/widgets/people_widgets.dart';
+import 'package:proof/features/people/presentation/widgets/report_user_dialog.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/providers/people_providers.dart';
@@ -58,10 +59,10 @@ class PersonProfileScreen extends ConsumerWidget {
             title: 'Profile',
             leading: BackButton(onPressed: () => context.pop()),
             actions: [
-              if (isFriend && userId != null && userId != profile.userId)
+              if (userId != null && userId != profile.userId)
                 PopupMenuButton<String>(
                   onSelected: (value) async {
-                    final currentUserId = userId!;
+                    final currentUserId = userId;
                     final service = ref.read(firestoreServiceProvider);
                     if (value == 'remove') {
                       final rel = connection.relationship;
@@ -71,11 +72,37 @@ class PersonProfileScreen extends ConsumerWidget {
                         fromUserId: currentUserId,
                         toUserId: profile.userId,
                       );
+                    } else if (value == 'report') {
+                      final result = await showDialog<ReportUserResult>(
+                        context: context,
+                        builder: (context) => ReportUserDialog(
+                          reportedHandle: profile.handle,
+                        ),
+                      );
+                      if (result == null || !context.mounted) return;
+                      await service.submitUserReport(
+                        reporterUserId: currentUserId,
+                        reportedUserId: profile.userId,
+                        reportedHandle: profile.handle,
+                        reason: result.reason,
+                        details: result.details,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Report submitted')),
+                        );
+                      }
                     }
                   },
                   itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'remove', child: Text('Remove friend')),
-                    const PopupMenuItem(value: 'block', child: Text('Block user')),
+                    if (isFriend)
+                      const PopupMenuItem(
+                        value: 'remove',
+                        child: Text('Remove friend'),
+                      ),
+                    if (isFriend)
+                      const PopupMenuItem(value: 'block', child: Text('Block user')),
+                    const PopupMenuItem(value: 'report', child: Text('Report user')),
                   ],
                 ),
             ],

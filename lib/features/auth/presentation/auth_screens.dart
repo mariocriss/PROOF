@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/app_constants.dart';
+import 'package:proof/core/constants/legal_constants.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/validators.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/models/user_model.dart';
+import 'package:proof/shared/widgets/legal_link.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -55,6 +57,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _error = ref.read(authServiceProvider).mapAuthError(e));
     } catch (_) {
       setState(() => _error = 'Something went wrong. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || Validators.email(email) != null) {
+      setState(() => _error = 'Enter a valid email to reset your password.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      await ref.read(authServiceProvider).sendPasswordResetEmail(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Password reset email sent to $email')),
+      );
+    } on FirebaseAuthException catch (e) {
+      setState(() => _error = ref.read(authServiceProvider).mapAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -115,7 +142,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   validator: Validators.password,
                   onFieldSubmitted: (_) => _signIn(),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _isLoading ? null : _resetPassword,
+                    child: const Text('Forgot password?'),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 ProofButton(
                   label: 'Sign in',
                   isLoading: _isLoading,
@@ -156,6 +191,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   bool _isLoading = false;
+  bool _acceptedTerms = false;
   String? _error;
 
   @override
@@ -168,6 +204,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_acceptedTerms) {
+      setState(() => _error = 'Please accept the Terms and Privacy Policy.');
+      return;
+    }
     setState(() {
       _isLoading = true;
       _error = null;
@@ -196,6 +236,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         await credential.user?.delete();
         rethrow;
       }
+
+      try {
+        await ref.read(authServiceProvider).sendEmailVerification();
+      } catch (_) {}
     } on FirebaseAuthException catch (e) {
       setState(() => _error = e.message ?? ref.read(authServiceProvider).mapAuthError(e));
     } on FirebaseException catch (e) {
@@ -278,7 +322,29 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   validator: _confirmPassword,
                   onFieldSubmitted: (_) => _register(),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _acceptedTerms,
+                  onChanged: (value) =>
+                      setState(() => _acceptedTerms = value ?? false),
+                  title: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text('I agree to the '),
+                      LegalInlineLink(
+                        label: 'Terms of Service',
+                        route: LegalConstants.termsOfServiceRoute,
+                      ),
+                      const Text(' and '),
+                      LegalInlineLink(
+                        label: 'Privacy Policy',
+                        route: LegalConstants.privacyPolicyRoute,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 ProofButton(
                   label: 'Create account',
                   isLoading: _isLoading,

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:proof/core/router/router_keys.dart';
 import 'package:proof/core/utils/onboarding_paths.dart';
 import 'package:proof/features/auth/presentation/auth_screens.dart';
 import 'package:proof/features/dashboard/presentation/dashboard_screen.dart';
@@ -25,12 +26,15 @@ import 'package:proof/features/shell/presentation/deferred_shell_tab.dart';
 import 'package:proof/features/shell/presentation/app_shell.dart';
 import 'package:proof/features/skills/presentation/skills_screens.dart';
 import 'package:proof/features/timeline/presentation/timeline_screens.dart';
+import 'package:proof/features/legal/presentation/legal_screens.dart';
+import 'package:proof/features/privacy/presentation/privacy_settings_screen.dart';
 import 'package:proof/features/verification/presentation/verification_requests_screen.dart';
 import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/login',
     redirect: (context, state) {
       final authState = ref.read(authStateProvider);
@@ -42,6 +46,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final location = state.matchedLocation;
 
       final isAuthRoute = location == '/login' || location == '/register';
+      final isLegalRoute =
+          location == '/privacy-policy' || location == '/terms';
       final isPublicPassport =
           location.startsWith('/passport/') && location != '/passport';
       final isOnboardingRoute = OnboardingPaths.isOnboardingRoute(location);
@@ -52,7 +58,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/dashboard';
       }
 
-      if (!isAuth && !isAuthRoute && !isPublicPassport) {
+      if (location == '/profile/edit') {
+        return '/edit-profile';
+      }
+
+      if (!isAuth && !isAuthRoute && !isPublicPassport && !isLegalRoute) {
         return '/login';
       }
 
@@ -133,14 +143,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SelectGymOnboardingScreen(),
       ),
       GoRoute(
+        path: '/edit-profile',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const EditProfileScreen(),
+      ),
+      GoRoute(
         path: '/profile',
-        redirect: (_, __) => '/dashboard',
-        routes: [
-          GoRoute(
-            path: 'edit',
-            builder: (context, state) => const EditProfileScreen(),
-          ),
-        ],
+        parentNavigatorKey: rootNavigatorKey,
+        redirect: (context, state) =>
+            state.uri.path == '/profile' ? '/dashboard' : null,
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -221,6 +232,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/proofs',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const ProofsScreen(),
         routes: [
           GoRoute(
@@ -239,6 +251,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/proof-stack',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const ProofStackScreen(),
         routes: [
           GoRoute(
@@ -252,18 +265,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/settings',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const SettingsScreen(),
       ),
       GoRoute(
         path: '/faq',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const FaqScreen(),
       ),
       GoRoute(
         path: '/about',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const AboutScreen(),
       ),
       GoRoute(
         path: '/friends',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) {
           final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
           return FriendsScreen(initialTab: tab.clamp(0, 2));
@@ -271,6 +288,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/people/:handle',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) {
           final handle = state.pathParameters['handle']!;
           return PersonProfileScreen(handle: handle);
@@ -278,6 +296,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/coaches',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const CoachesScreen(),
         routes: [
           GoRoute(
@@ -291,10 +310,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/gyms',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const GymsScreen(),
       ),
       GoRoute(
         path: '/gym-manager',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const GymManagerHubScreen(),
         routes: [
           GoRoute(
@@ -321,38 +342,62 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/verification-requests',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const VerificationRequestsScreen(),
       ),
       GoRoute(
         path: '/friend-requests',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const FriendRequestsScreen(),
       ),
       GoRoute(
         path: '/coach-requests',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const CoachRequestsScreen(),
       ),
       GoRoute(
         path: '/account',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const AccountScreen(),
       ),
       GoRoute(
         path: '/notifications',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const NotificationsScreen(),
       ),
       GoRoute(
         path: '/coach/verification-queue',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const CoachVerificationQueueScreen(),
       ),
       GoRoute(
         path: '/coach/athletes',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const CoachAthletesScreen(),
       ),
       GoRoute(
         path: '/coach/verified-proofs',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const CoachVerifiedProofsScreen(),
       ),
       GoRoute(
+        path: '/privacy-settings',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const PrivacySettingsScreen(),
+      ),
+      GoRoute(
+        path: '/privacy-policy',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const PrivacyPolicyScreen(),
+      ),
+      GoRoute(
+        path: '/terms',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const TermsOfServiceScreen(),
+      ),
+      GoRoute(
         path: '/passport/:handle',
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) {
           final handle = state.pathParameters['handle']!;
           return PassportScreen(handle: handle);
@@ -361,8 +406,20 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 
-  ref.listen(authStateProvider, (_, __) => router.refresh());
-  ref.listen(currentUserProvider, (_, __) => router.refresh());
+  ref.listen(authStateProvider, (previous, next) {
+    final previousUid = previous?.valueOrNull?.uid;
+    final nextUid = next.valueOrNull?.uid;
+    if (previousUid != nextUid) {
+      router.refresh();
+    }
+  });
+  ref.listen(currentUserProvider, (previous, next) {
+    final wasComplete = previous?.valueOrNull?.onboardingCompleted;
+    final isComplete = next.valueOrNull?.onboardingCompleted;
+    if (wasComplete != isComplete) {
+      router.refresh();
+    }
+  });
   ref.onDispose(router.dispose);
 
   return router;

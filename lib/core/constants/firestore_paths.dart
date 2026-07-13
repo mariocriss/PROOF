@@ -14,6 +14,7 @@ class FirestorePaths {
   static const String gymMemberships = 'gymMemberships';
   static const String gymHandles = 'gymHandles';
   static const String publicProfiles = 'publicProfiles';
+  static const String userReports = 'userReports';
 
   static String userDoc(String userId) => '$users/$userId';
 

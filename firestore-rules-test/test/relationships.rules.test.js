@@ -138,4 +138,20 @@ describe('relationships security rules', () => {
         .get(),
     );
   });
+
+  it('requires handle ownership on create', async () => {
+    const marioDb = authedDb(MARIO);
+
+    await assertFails(
+      marioDb.collection('handles').doc('stolen-handle').set({
+        userId: CHRIS,
+      }),
+    );
+
+    await assertSucceeds(
+      marioDb.collection('handles').doc('mario-handle').set({
+        userId: MARIO,
+      }),
+    );
+  });
 });

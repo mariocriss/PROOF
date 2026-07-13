@@ -1,10 +1,8 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:proof/core/constants/app_features.dart';
 import 'package:proof/core/constants/measurement_units.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/date_utils.dart';
@@ -210,7 +208,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   ProofSource _proofSource = ProofSource.selfReported;
   String? _selectedCoachId;
   String? _selectedGymId;
-  File? _mediaFile;
   bool _isLoading = false;
   bool _didPrefetchCoaches = false;
 
@@ -258,12 +255,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         _selectedGymId = null;
       }
     });
-  }
-
-  Future<void> _pickMedia() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery);
-    if (file != null) setState(() => _mediaFile = File(file.path));
   }
 
   Future<void> _save() async {
@@ -314,17 +305,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         measurementType: skill.measurementType,
       );
       final proofId = const Uuid().v4();
-      String? mediaUrl;
-
-      if (_mediaFile != null) {
-        try {
-          mediaUrl = await ref.read(storageServiceProvider).uploadProofMedia(
-                userId: user.uid,
-                proofId: proofId,
-                file: _mediaFile!,
-              );
-        } catch (_) {}
-      }
 
       final title = ResultFormatter.display(resultRaw, unit);
 
@@ -343,7 +323,6 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         result: resultRaw,
         unit: unit,
         notes: _notesController.text.trim(),
-        mediaUrl: mediaUrl,
         proofSource: storedSource,
         verificationStatus: verificationStatus,
         coachId: _selectedCoachId,
@@ -428,7 +407,7 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                   'Proofs document performance for a capability you already track. Start by adding a skill.',
               action: ProofButton(
                 label: 'Add skill',
-                onPressed: () => context.push('/skills/add'),
+                onPressed: () => context.go('/skills/add'),
               ),
             );
           }
@@ -618,16 +597,17 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                       hint: 'Optional context about this evidence',
                       maxLines: 3,
                     ),
-                    const SizedBox(height: 16),
-                    OutlinedButton.icon(
-                      onPressed: _pickMedia,
-                      icon: const Icon(Icons.attach_file),
-                      label: Text(
-                        _mediaFile != null
-                            ? 'Media attached'
-                            : 'Attach media (optional)',
+                    if (!AppFeatures.cloudStorageEnabled) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Photo attachments are not available on the current launch plan. '
+                        'You can still save text-based proofs.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.inkMuted,
+                              height: 1.4,
+                            ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 32),
                     ProofButton(
                       label: widget.isFirstProof ? 'Save first proof' : 'Add proof',

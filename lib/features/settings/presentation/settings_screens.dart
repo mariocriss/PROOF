@@ -33,7 +33,31 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsTile(
             title: 'Edit profile',
             subtitle: identity != null ? '@${identity.handle}' : 'Update your identity',
-            onTap: () => context.push('/profile/edit'),
+            onTap: () => context.push('/edit-profile'),
+          ),
+          _SettingsTile(
+            title: 'Privacy settings',
+            subtitle: 'Control discoverability and public profile',
+            onTap: () => context.push('/privacy-settings'),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            'LEGAL',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  letterSpacing: 1.2,
+                  color: AppColors.inkSecondary,
+                ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsTile(
+            title: 'Privacy Policy',
+            subtitle: 'View in app',
+            onTap: () => context.push('/privacy-policy'),
+          ),
+          _SettingsTile(
+            title: 'Terms of Service',
+            subtitle: 'View in app',
+            onTap: () => context.push('/terms'),
           ),
           const SizedBox(height: 32),
           Text(

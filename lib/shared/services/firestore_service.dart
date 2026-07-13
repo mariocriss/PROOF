@@ -29,6 +29,7 @@ import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
+import 'package:proof/shared/models/user_report_model.dart';
 import 'package:proof/shared/models/verification_status.dart';
 
 class FirestoreService {
@@ -81,6 +82,9 @@ class FirestoreService {
   CollectionReference<Map<String, dynamic>> get _publicProfiles =>
       _firestore.collection(FirestorePaths.publicProfiles);
 
+  CollectionReference<Map<String, dynamic>> get _userReports =>
+      _firestore.collection(FirestorePaths.userReports);
+
   static const int timelineMigrationVersion = 2;
   static const int skillMergeVersion = 2;
 
@@ -105,6 +109,10 @@ class FirestoreService {
         await _handles.doc(coachProfile.handle.toLowerCase()).delete();
       }
     }
+
+    await _deleteRelationshipsForUser(userId);
+    await _deleteVerificationRequestsForUser(userId);
+    await _deleteUserReportsForUser(userId);
 
     await _coachProfiles.doc(userId).delete();
 
@@ -133,6 +141,75 @@ class FirestoreService {
     await _identityRef(userId).delete();
     await _publicProfiles.doc(userId).delete();
     await _userRef(userId).delete();
+  }
+
+  Future<void> _deleteRelationshipsForUser(String userId) async {
+    final from = await _relationships
+        .where('fromUserId', isEqualTo: userId)
+        .get();
+    final to =
+        await _relationships.where('toUserId', isEqualTo: userId).get();
+
+    final ids = <String>{
+      ...from.docs.map((doc) => doc.id),
+      ...to.docs.map((doc) => doc.id),
+    };
+
+    for (final id in ids) {
+      await _relationships.doc(id).delete();
+    }
+  }
+
+  Future<void> _deleteVerificationRequestsForUser(String userId) async {
+    final athlete = await _verificationRequests
+        .where('athleteId', isEqualTo: userId)
+        .get();
+    final coach = await _verificationRequests
+        .where('coachId', isEqualTo: userId)
+        .get();
+
+    final ids = <String>{
+      ...athlete.docs.map((doc) => doc.id),
+      ...coach.docs.map((doc) => doc.id),
+    };
+
+    for (final id in ids) {
+      await _verificationRequests.doc(id).delete();
+    }
+  }
+
+  Future<void> _deleteUserReportsForUser(String userId) async {
+    final submitted = await _userReports
+        .where('reporterUserId', isEqualTo: userId)
+        .get();
+    for (final doc in submitted.docs) {
+      await doc.reference.delete();
+    }
+  }
+
+  Future<void> submitUserReport({
+    required String reporterUserId,
+    required String reportedUserId,
+    required String reportedHandle,
+    required UserReportReason reason,
+    String details = '',
+  }) async {
+    if (reporterUserId == reportedUserId) {
+      throw StateError('You cannot report yourself');
+    }
+
+    final id = _userReports.doc().id;
+    await _userReports.doc(id).set(
+          UserReportModel(
+            id: id,
+            reporterUserId: reporterUserId,
+            reportedUserId: reportedUserId,
+            reportedHandle: reportedHandle,
+            reason: reason,
+            details: details.trim(),
+            createdAt: DateTime.now(),
+          ).toFirestore(),
+        );
   }
 
   Future<void> _deleteCollection(

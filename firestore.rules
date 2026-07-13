@@ -91,6 +91,21 @@ service cloud.firestore {
         && request.resource.data.gymId.size() > 0;
     }
 
+    function isRelationshipParticipant() {
+      return request.auth != null && (
+        resource.data.fromUserId == request.auth.uid
+        || resource.data.toUserId == request.auth.uid
+        || resource.data.requesterUserId == request.auth.uid
+        || resource.data.recipientUserId == request.auth.uid
+      );
+    }
+
+    function relationshipCoreFieldsImmutable() {
+      return request.resource.data.fromUserId == resource.data.fromUserId
+        && request.resource.data.toUserId == resource.data.toUserId
+        && request.resource.data.type == resource.data.type;
+    }
+
     function friendDocId(userA, userB) {
       return userA < userB
         ? 'friend_' + userA + '_' + userB
@@ -152,14 +167,19 @@ service cloud.firestore {
 
     match /handles/{handle} {
       allow read: if true;
-      allow create: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null
         && resource.data.userId == request.auth.uid;
     }
 
     match /gymHandles/{handle} {
       allow read: if true;
-      allow create: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.gymId is string
+        && request.resource.data.gymId.size() > 0
+        && exists(/databases/$(database)/documents/gyms/$(request.resource.data.gymId))
+        && get(/databases/$(database)/documents/gyms/$(request.resource.data.gymId)).data.createdBy == request.auth.uid;
       allow update: if false;
       allow delete: if request.auth != null
         && resource.data.gymId is string
@@ -210,12 +230,9 @@ service cloud.firestore {
           || (request.resource.data.type == 'friend'
             && request.resource.data.status == 'blocked')
         );
-      allow update: if request.auth != null && (
-        resource.data.fromUserId == request.auth.uid
-        || resource.data.toUserId == request.auth.uid
-        || resource.data.requesterUserId == request.auth.uid
-        || resource.data.recipientUserId == request.auth.uid
-      );
+      allow update: if request.auth != null
+        && isRelationshipParticipant()
+        && relationshipCoreFieldsImmutable();
       allow delete: if request.auth != null && (
         resource.data.fromUserId == request.auth.uid
         || resource.data.toUserId == request.auth.uid
@@ -258,6 +275,19 @@ service cloud.firestore {
     match /coachProfiles/{userId} {
       allow read: if true;
       allow write, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /userReports/{reportId} {
+      allow create: if request.auth != null
+        && request.resource.data.reporterUserId == request.auth.uid
+        && request.resource.data.reportedUserId is string
+        && request.resource.data.reportedUserId.size() > 0
+        && request.resource.data.reportedUserId != request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0;
+      allow read: if request.auth != null
+        && resource.data.reporterUserId == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

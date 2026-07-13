@@ -9,7 +9,6 @@ import 'package:proof/shared/models/user_model.dart';
 import 'package:proof/shared/services/auth_service.dart';
 import 'package:proof/shared/services/firestore_service.dart';
 import 'package:proof/shared/services/signup_service.dart';
-import 'package:proof/shared/services/storage_service.dart';
 
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
   return FirebaseAuth.instance;
@@ -35,10 +34,6 @@ final signupServiceProvider = Provider<SignupService>((ref) {
     auth: ref.watch(authServiceProvider),
     firestore: ref.watch(firestoreServiceProvider),
   );
-});
-
-final storageServiceProvider = Provider<StorageService>((ref) {
-  return StorageService();
 });
 
 final authStateProvider = StreamProvider<User?>((ref) {

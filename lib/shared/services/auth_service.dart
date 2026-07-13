@@ -9,6 +9,8 @@ class AuthService {
 
   User? get currentUser => _auth.currentUser;
 
+  bool get isEmailVerified => _auth.currentUser?.emailVerified ?? false;
+
   Future<UserCredential> signIn({
     required String email,
     required String password,
@@ -31,6 +33,39 @@ class AuthService {
 
   Future<void> signOut() => _auth.signOut();
 
+  Future<void> sendPasswordResetEmail(String email) {
+    return _auth.sendPasswordResetEmail(email: email.trim());
+  }
+
+  Future<void> sendEmailVerification() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('No signed-in user');
+    }
+    await user.sendEmailVerification();
+  }
+
+  Future<void> reloadCurrentUser() async {
+    await _auth.currentUser?.reload();
+  }
+
+  Future<void> reauthenticateWithPassword(String password) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('No signed-in user');
+    }
+    final email = user.email;
+    if (email == null || email.isEmpty) {
+      throw StateError('Account has no email address');
+    }
+
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+    await user.reauthenticateWithCredential(credential);
+  }
+
   Future<void> deleteCurrentUser() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -52,6 +87,10 @@ class AuthService {
         return 'Password is too weak';
       case 'invalid-email':
         return 'Invalid email address';
+      case 'too-many-requests':
+        return 'Too many attempts. Try again later.';
+      case 'requires-recent-login':
+        return 'Please confirm your password and try again.';
       default:
         return e.message ?? 'Authentication failed';
     }

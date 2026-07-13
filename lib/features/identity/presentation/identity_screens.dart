@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:proof/core/constants/app_constants.dart';
+import 'package:proof/core/constants/app_features.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/validators.dart';
 import 'package:proof/shared/models/physical_identity.dart';
@@ -221,7 +222,7 @@ class ProfileScreen extends ConsumerWidget {
                 SectionHeader(
                   title: 'NAVIGATION',
                   action: TextButton(
-                    onPressed: () => context.push('/profile/edit'),
+                    onPressed: () => context.push('/edit-profile'),
                     child: const Text('Edit'),
                   ),
                 ),
@@ -453,6 +454,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   String? _error;
   File? _avatarFile;
   PhysicalIdentity? _original;
+  String? _initializedForUserId;
 
   @override
   void initState() {
@@ -473,7 +475,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   void _initFromIdentity(PhysicalIdentity identity) {
-    if (_original != null) return;
+    if (_initializedForUserId == identity.userId) return;
+    _initializedForUserId = identity.userId;
     _original = identity;
     _displayNameController.text = identity.displayName;
     _handleController.text = identity.handle;
@@ -482,6 +485,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   Future<void> _pickAvatar() async {
+    if (!AppFeatures.cloudStorageEnabled) return;
     final picker = ImagePicker();
     final image = await picker.pickImage(
       source: ImageSource.gallery,
@@ -504,7 +508,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
     try {
       final firestore = ref.read(firestoreServiceProvider);
-      final storage = ref.read(storageServiceProvider);
       final handle = _handleController.text.trim().toLowerCase();
 
       if (handle != _original!.handle) {
@@ -515,20 +518,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         }
       }
 
-      var avatarUrl = _original!.avatarUrl;
-      if (_avatarFile != null) {
-        avatarUrl = await storage.uploadAvatar(
-          userId: _original!.userId,
-          file: _avatarFile!,
-        );
-      }
-
       final updated = _original!.copyWith(
         displayName: _displayNameController.text.trim(),
         handle: handle,
         bio: _bioController.text.trim(),
         location: _locationController.text.trim(),
-        avatarUrl: avatarUrl,
         updatedAt: DateTime.now(),
       );
 
@@ -557,6 +551,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         _initFromIdentity(identity);
 
         return Scaffold(
+          backgroundColor: AppColors.background,
           appBar: ProofAppBar(
             title: 'Edit profile',
             leading: BackButton(onPressed: () => context.pop()),
@@ -570,7 +565,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 children: [
                   Center(
                     child: GestureDetector(
-                      onTap: _pickAvatar,
+                      onTap: AppFeatures.cloudStorageEnabled ? _pickAvatar : null,
                       child: Stack(
                         children: [
                           if (_avatarFile != null)
@@ -584,23 +579,38 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                               displayName: identity.displayName,
                               radius: 48,
                             ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: AppColors.accent,
-                                shape: BoxShape.circle,
+                          if (AppFeatures.cloudStorageEnabled)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.accent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
                               ),
-                              child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
                             ),
-                          ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
+                  Text(
+                    'These details appear on your passport and in people search '
+                    'when your profile is public.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.inkMuted,
+                          height: 1.4,
+                        ),
+                  ),
+                  const SizedBox(height: 24),
                   if (_error != null) ...[
                     Text(_error!, style: const TextStyle(color: AppColors.error)),
                     const SizedBox(height: 16),
@@ -635,6 +645,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     label: 'Save changes',
                     isLoading: _isLoading,
                     onPressed: _save,
+                  ),
+                  const SizedBox(height: 16),
+                  ProofButton(
+                    label: 'Privacy settings',
+                    isOutlined: true,
+                    onPressed: () => context.push('/privacy-settings'),
                   ),
                 ],
               ),

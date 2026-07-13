@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:proof/core/constants/app_features.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/onboarding_paths.dart';
 import 'package:proof/core/utils/validators.dart';
@@ -346,6 +347,7 @@ class _AthleteIdentityOnboardingScreenState
   }
 
   Future<void> _pickAvatar() async {
+    if (!AppFeatures.cloudStorageEnabled) return;
     final image = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       maxWidth: 512,
@@ -380,11 +382,8 @@ class _AthleteIdentityOnboardingScreenState
       }
 
       String? avatarUrl;
-      if (_avatarFile != null) {
-        avatarUrl = await ref.read(storageServiceProvider).uploadAvatar(
-              userId: user.uid,
-              file: _avatarFile!,
-            );
+      if (AppFeatures.cloudStorageEnabled && _avatarFile != null) {
+        // Cloud storage uploads are disabled for launch.
       } else if (userModel?.hasIdentity ?? false) {
         avatarUrl = (await firestore.getIdentity(user.uid))?.avatarUrl;
       }
@@ -607,6 +606,7 @@ class _CoachProfileOnboardingScreenState
   }
 
   Future<void> _pickAvatar() async {
+    if (!AppFeatures.cloudStorageEnabled) return;
     final image = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       maxWidth: 512,
@@ -642,11 +642,8 @@ class _CoachProfileOnboardingScreenState
       }
 
       String? avatarUrl;
-      if (_avatarFile != null) {
-        avatarUrl = await ref.read(storageServiceProvider).uploadAvatar(
-              userId: user.uid,
-              file: _avatarFile!,
-            );
+      if (AppFeatures.cloudStorageEnabled && _avatarFile != null) {
+        // Cloud storage uploads are disabled for launch.
       } else if (hasIdentity) {
         avatarUrl = (await firestore.getIdentity(user.uid))?.avatarUrl;
       }
@@ -895,23 +892,8 @@ class _GymProfileOnboardingScreenState
       }
 
       String? logoUrl;
-      if (_logoFile != null) {
-        try {
-          final tempId = existingGymId ?? 'pending_${user.uid}';
-          logoUrl = await ref.read(storageServiceProvider).uploadGymLogo(
-                gymId: tempId,
-                file: _logoFile!,
-              );
-        } catch (_) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Logo upload failed. Creating gym without a logo.',
-              ),
-            ),
-          );
-        }
+      if (AppFeatures.cloudStorageEnabled && _logoFile != null) {
+        // Cloud storage uploads are disabled for launch.
       }
 
       final gym = GymModel(

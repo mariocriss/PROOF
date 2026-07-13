@@ -2,9 +2,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:proof/core/constants/legal_constants.dart';
 import 'package:proof/core/theme/app_colors.dart';
+import 'package:proof/features/auth/presentation/reauth_dialog.dart';
 import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/widgets/legal_link.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
@@ -25,9 +28,78 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     super.dispose();
   }
 
+  Future<void> _resendVerification() async {
+    try {
+      await ref.read(authServiceProvider).sendEmailVerification();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Verification email sent')),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(authServiceProvider).mapAuthError(e) ??
+                'Could not send verification email',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteAccount(String userId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This permanently removes your sign-in, profile, proofs, friendships, and gym memberships.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final password = await showDialog<String>(
+      context: context,
+      builder: (context) => const ReauthDialog(),
+    );
+    if (password == null || password.isEmpty || !mounted) return;
+
+    try {
+      final auth = ref.read(authServiceProvider);
+      await auth.reauthenticateWithPassword(password);
+      await ref.read(firestoreServiceProvider).deleteAllUserData(userId);
+      await auth.deleteCurrentUser();
+      if (context.mounted) context.go('/register');
+    } on FirebaseAuthException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(authServiceProvider).mapAuthError(e) ??
+                'Could not delete account',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).valueOrNull;
+    final auth = ref.watch(authServiceProvider);
+    final emailVerified = auth.isEmailVerified;
 
     if (user != null && !_loaded) {
       _isCoach = user.isCoach;
@@ -48,6 +120,21 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             user?.email ?? '',
             style: Theme.of(context).textTheme.titleMedium,
           ),
+          const SizedBox(height: 8),
+          Text(
+            emailVerified ? 'Email verified' : 'Email not verified',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: emailVerified ? AppColors.accent : AppColors.inkMuted,
+                ),
+          ),
+          if (!emailVerified) ...[
+            const SizedBox(height: 12),
+            ProofButton(
+              label: 'Resend verification email',
+              isOutlined: true,
+              onPressed: _resendVerification,
+            ),
+          ],
           const SizedBox(height: 24),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -87,6 +174,22 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           ),
           const SizedBox(height: 16),
           ProofButton(
+            label: 'Privacy settings',
+            isOutlined: true,
+            onPressed: () => context.push('/privacy-settings'),
+          ),
+          const SizedBox(height: 12),
+          LegalLinkButton(
+            label: 'Privacy Policy',
+            route: LegalConstants.privacyPolicyRoute,
+          ),
+          const SizedBox(height: 12),
+          LegalLinkButton(
+            label: 'Terms of Service',
+            route: LegalConstants.termsOfServiceRoute,
+          ),
+          const SizedBox(height: 16),
+          ProofButton(
             label: 'Sign out',
             isOutlined: true,
             onPressed: () => ref.read(authServiceProvider).signOut(),
@@ -95,50 +198,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           ProofButton(
             label: 'Delete account',
             isOutlined: true,
-            onPressed: user == null
-                ? null
-                : () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Delete account?'),
-                        content: const Text(
-                          'This permanently removes your sign-in and all PROOF data.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Delete'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirmed != true || !context.mounted) return;
-
-                    try {
-                      final auth = ref.read(authServiceProvider);
-                      await ref
-                          .read(firestoreServiceProvider)
-                          .deleteAllUserData(user.id);
-                      await auth.deleteCurrentUser();
-                      if (context.mounted) context.go('/register');
-                    } on FirebaseAuthException catch (e) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            e.code == 'requires-recent-login'
-                                ? 'Sign out, sign in again, then delete.'
-                                : (e.message ?? 'Could not delete account'),
-                          ),
-                        ),
-                      );
-                    }
-                  },
+            onPressed: user == null ? null : () => _deleteAccount(user.id),
           ),
         ],
       ),
