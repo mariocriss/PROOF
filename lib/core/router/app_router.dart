@@ -12,6 +12,7 @@ import 'package:proof/features/friends/presentation/friends_screen.dart';
 import 'package:proof/features/gyms/presentation/gym_manager_screens.dart';
 import 'package:proof/features/gyms/presentation/gyms_screen.dart';
 import 'package:proof/features/onboarding/presentation/onboarding_screens.dart';
+import 'package:proof/features/people/presentation/person_profile_screen.dart';
 import 'package:proof/features/people/presentation/request_screens.dart';
 import 'package:proof/features/more/presentation/more_screen.dart';
 import 'package:proof/features/passport/presentation/my_passport_tab.dart';
@@ -263,7 +264,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/friends',
-        builder: (context, state) => const FriendsScreen(),
+        builder: (context, state) {
+          final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+          return FriendsScreen(initialTab: tab.clamp(0, 2));
+        },
+      ),
+      GoRoute(
+        path: '/people/:handle',
+        builder: (context, state) {
+          final handle = state.pathParameters['handle']!;
+          return PersonProfileScreen(handle: handle);
+        },
       ),
       GoRoute(
         path: '/coaches',

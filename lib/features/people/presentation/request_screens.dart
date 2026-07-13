@@ -9,11 +9,28 @@ import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/providers/people_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
-class FriendRequestsScreen extends ConsumerWidget {
+class FriendRequestsScreen extends ConsumerStatefulWidget {
   const FriendRequestsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FriendRequestsScreen> createState() =>
+      _FriendRequestsScreenState();
+}
+
+class _FriendRequestsScreenState extends ConsumerState<FriendRequestsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final userId = ref.read(authStateProvider).valueOrNull?.uid;
+      if (userId != null) {
+        ref.read(firestoreServiceProvider).markIncomingFriendRequestsSeen(userId);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final userId = ref.watch(authStateProvider).valueOrNull?.uid;
     final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
 

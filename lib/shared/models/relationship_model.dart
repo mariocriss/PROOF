@@ -20,18 +20,30 @@ enum RelationshipType {
 enum RelationshipStatus {
   pending('pending'),
   accepted('accepted'),
-  rejected('rejected');
+  declined('declined'),
+  rejected('rejected'),
+  blocked('blocked');
 
   const RelationshipStatus(this.value);
 
   final String value;
 
   static RelationshipStatus fromString(String? value) {
+    if (value == null || value.isEmpty) return RelationshipStatus.pending;
     return RelationshipStatus.values.firstWhere(
       (s) => s.value == value,
       orElse: () => RelationshipStatus.pending,
     );
   }
+
+  bool get isTerminal => switch (this) {
+        RelationshipStatus.accepted ||
+        RelationshipStatus.declined ||
+        RelationshipStatus.rejected ||
+        RelationshipStatus.blocked =>
+          true,
+        _ => false,
+      };
 }
 
 class RelationshipModel {
@@ -42,6 +54,9 @@ class RelationshipModel {
     required this.type,
     required this.status,
     required this.createdAt,
+    this.respondedAt,
+    this.requesterSeen = true,
+    this.recipientSeen = false,
   });
 
   final String id;
@@ -50,6 +65,12 @@ class RelationshipModel {
   final RelationshipType type;
   final RelationshipStatus status;
   final DateTime createdAt;
+  final DateTime? respondedAt;
+  final bool requesterSeen;
+  final bool recipientSeen;
+
+  String get requesterUserId => fromUserId;
+  String get recipientUserId => toUserId;
 
   factory RelationshipModel.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -57,12 +78,19 @@ class RelationshipModel {
     final data = doc.data()!;
     return RelationshipModel(
       id: doc.id,
-      fromUserId: data['fromUserId'] as String? ?? '',
-      toUserId: data['toUserId'] as String? ?? '',
+      fromUserId: data['fromUserId'] as String? ??
+          data['requesterUserId'] as String? ??
+          '',
+      toUserId: data['toUserId'] as String? ??
+          data['recipientUserId'] as String? ??
+          '',
       type: RelationshipType.fromString(data['type'] as String?),
       status: RelationshipStatus.fromString(data['status'] as String?),
       createdAt:
           (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      respondedAt: (data['respondedAt'] as Timestamp?)?.toDate(),
+      requesterSeen: data['requesterSeen'] as bool? ?? true,
+      recipientSeen: data['recipientSeen'] as bool? ?? false,
     );
   }
 
@@ -70,14 +98,23 @@ class RelationshipModel {
     return {
       'fromUserId': fromUserId,
       'toUserId': toUserId,
+      'requesterUserId': fromUserId,
+      'recipientUserId': toUserId,
       'type': type.value,
       'status': status.value,
       'createdAt': Timestamp.fromDate(createdAt),
+      'respondedAt':
+          respondedAt != null ? Timestamp.fromDate(respondedAt!) : null,
+      'requesterSeen': requesterSeen,
+      'recipientSeen': recipientSeen,
     };
   }
 
   RelationshipModel copyWith({
     RelationshipStatus? status,
+    DateTime? respondedAt,
+    bool? requesterSeen,
+    bool? recipientSeen,
   }) {
     return RelationshipModel(
       id: id,
@@ -86,6 +123,14 @@ class RelationshipModel {
       type: type,
       status: status ?? this.status,
       createdAt: createdAt,
+      respondedAt: respondedAt ?? this.respondedAt,
+      requesterSeen: requesterSeen ?? this.requesterSeen,
+      recipientSeen: recipientSeen ?? this.recipientSeen,
     );
+  }
+
+  static String friendDocId(String userIdA, String userIdB) {
+    final sorted = [userIdA, userIdB]..sort();
+    return 'friend_${sorted[0]}_${sorted[1]}';
   }
 }

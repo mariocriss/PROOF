@@ -1,12 +1,19 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:proof/features/people/domain/friend_connection_state.dart';
+import 'package:proof/features/people/domain/people_menu_counts.dart';
+import 'package:proof/features/people/domain/people_relationship_queries.dart';
+import 'package:proof/features/people/domain/people_search.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/shared/models/coach_profile.dart';
 import 'package:proof/shared/models/physical_identity.dart';
+import 'package:proof/shared/models/public_profile_model.dart';
 import 'package:proof/shared/models/relationship_model.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/providers/app_providers.dart';
-import 'package:proof/shared/providers/shell_providers.dart';
+
+export 'package:proof/features/people/domain/people_menu_counts.dart';
+export 'package:proof/features/people/domain/people_relationship_queries.dart';
 
 final proofStackSummariesProvider =
     Provider.autoDispose<List<ProofStackSkillSummary>>((ref) {
@@ -15,11 +22,40 @@ final proofStackSummariesProvider =
   return ProofStackMerge.buildSummaries(skills: skills, proofs: proofs);
 });
 
-final relationshipsProvider =
-    StreamProvider.autoDispose<List<RelationshipModel>>((ref) {
+final relationshipsProvider = StreamProvider<List<RelationshipModel>>((ref) {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value([]);
   return ref.watch(firestoreServiceProvider).watchRelationshipsForUser(user.uid);
+});
+
+final searchablePublicProfilesProvider =
+    StreamProvider<List<PublicProfileModel>>((ref) {
+  return ref.watch(firestoreServiceProvider).watchSearchablePublicProfiles();
+});
+
+final peopleSearchResultsProvider =
+    Provider.autoDispose.family<List<PublicProfileModel>, String>((ref, query) {
+  final userId = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
+  final profiles = ref.watch(searchablePublicProfilesProvider).valueOrNull ?? [];
+  final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+  final blockedIds = blockedUserIds(relationships, userId);
+
+  return PeopleSearch.filterProfiles(
+    profiles,
+    query,
+    currentUserId: userId,
+    blockedUserIds: blockedIds,
+  );
+});
+
+final publicProfileProvider =
+    FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, userId) {
+  return ref.watch(firestoreServiceProvider).getPublicProfile(userId);
+});
+
+final publicProfileByHandleProvider =
+    FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, handle) {
+  return ref.watch(firestoreServiceProvider).getOrSyncPublicProfileByHandle(handle);
 });
 
 final coachProfilesProvider = StreamProvider.autoDispose<List<CoachProfile>>((ref) {
@@ -71,28 +107,25 @@ final identityByUserIdProvider =
   return ref.watch(firestoreServiceProvider).getIdentity(userId);
 });
 
-class MoreMenuCounts {
-  const MoreMenuCounts({
-    this.friends = 0,
-    this.coaches = 0,
-    this.verificationRequests = 0,
-    this.friendRequests = 0,
-    this.coachRequests = 0,
-    this.coachQueue = 0,
-  });
+final incomingFriendRequestCountProvider = Provider<int>((ref) {
+  final userId = ref.watch(authStateProvider).valueOrNull?.uid;
+  if (userId == null) return 0;
+  final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+  return countIncomingFriendRequests(relationships, userId);
+});
 
-  final int friends;
-  final int coaches;
-  final int verificationRequests;
-  final int friendRequests;
-  final int coachRequests;
-  final int coachQueue;
-}
+final friendConnectionProvider =
+    Provider.autoDispose.family<FriendConnection, String>((ref, otherUserId) {
+  final userId = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
+  final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+  return FriendConnection.resolve(
+    currentUserId: userId,
+    otherUserId: otherUserId,
+    relationships: relationships,
+  );
+});
 
-final moreMenuCountsProvider = Provider.autoDispose<MoreMenuCounts>((ref) {
-  final activeTab = ref.watch(activeShellTabIndexProvider);
-  if (!isShellTabActive(4, activeTab)) return const MoreMenuCounts();
-
+final moreMenuCountsProvider = Provider<MoreMenuCounts>((ref) {
   final userId = ref.watch(authStateProvider).valueOrNull?.uid;
   if (userId == null) return const MoreMenuCounts();
 
@@ -104,122 +137,18 @@ final moreMenuCountsProvider = Provider.autoDispose<MoreMenuCounts>((ref) {
       ? ref.watch(coachVerificationQueueProvider).valueOrNull ?? []
       : const <VerificationRequestModel>[];
 
-  final friends = relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.friend &&
-            r.status == RelationshipStatus.accepted &&
-            (r.fromUserId == userId || r.toUserId == userId),
-      )
-      .length;
-
-  final coaches = relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.coach &&
-            r.status == RelationshipStatus.accepted &&
-            r.fromUserId == userId,
-      )
-      .length;
-
-  final friendRequests = relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.friend &&
-            r.status == RelationshipStatus.pending &&
-            r.toUserId == userId,
-      )
-      .length;
-
-  final coachRequests = relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.coach &&
-            r.status == RelationshipStatus.pending &&
-            r.toUserId == userId,
-      )
-      .length;
-
-  final pendingVerifications = verificationRequests
-      .where((r) => r.status == VerificationRequestStatus.pending)
-      .length;
-
-  return MoreMenuCounts(
-    friends: friends,
-    coaches: coaches,
-    verificationRequests: pendingVerifications,
-    friendRequests: friendRequests,
-    coachRequests: coachRequests,
+  return PeopleMenuCounts.build(
+    userId: userId,
+    relationships: relationships,
+    verificationRequests: verificationRequests,
     coachQueue: coachQueue.length,
+    includeCoaches: true,
   );
 });
 
-List<RelationshipModel> myCoaches(
-  List<RelationshipModel> relationships,
-  String userId,
-) {
-  return relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.coach &&
-            r.status == RelationshipStatus.accepted &&
-            r.fromUserId == userId,
-      )
-      .toList();
-}
-
-List<RelationshipModel> pendingCoachRequestsForCoach(
-  List<RelationshipModel> relationships,
-  String coachId,
-) {
-  return relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.coach &&
-            r.status == RelationshipStatus.pending &&
-            r.toUserId == coachId,
-      )
-      .toList();
-}
-
-List<RelationshipModel> myAthletes(
-  List<RelationshipModel> relationships,
-  String coachId,
-) {
-  return relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.coach &&
-            r.status == RelationshipStatus.accepted &&
-            r.toUserId == coachId,
-      )
-      .toList();
-}
-
-List<RelationshipModel> acceptedFriends(
-  List<RelationshipModel> relationships,
-  String userId,
-) {
-  return relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.friend &&
-            r.status == RelationshipStatus.accepted &&
-            (r.fromUserId == userId || r.toUserId == userId),
-      )
-      .toList();
-}
-
+/// Back-compat alias used by request screens.
 List<RelationshipModel> pendingFriendRequests(
   List<RelationshipModel> relationships,
   String userId,
-) {
-  return relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.friend &&
-            r.status == RelationshipStatus.pending &&
-            r.toUserId == userId,
-      )
-      .toList();
-}
+) =>
+    pendingIncomingFriendRequests(relationships, userId);

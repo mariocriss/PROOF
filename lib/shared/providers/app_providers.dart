@@ -84,6 +84,7 @@ final dataBootstrapProvider = FutureProvider.family<void, String>((ref, userId) 
   await service.mergeDuplicateSkillsIfNeeded(userId);
   await service.migrateTimelineIfNeeded(userId);
   await service.migrateOnboardingIfNeeded(userId);
+  await service.syncPublicProfile(userId);
 });
 
 final skillsProvider = StreamProvider.autoDispose<List<SkillModel>>((ref) async* {

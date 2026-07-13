@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
+import 'package:proof/features/people/domain/friend_connection_state.dart';
 import 'package:proof/shared/models/coach_profile.dart';
 import 'package:proof/shared/models/physical_identity.dart';
+import 'package:proof/shared/models/public_profile_model.dart';
+import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class PeopleSectionLabel extends StatelessWidget {
   const PeopleSectionLabel({super.key, required this.title});
@@ -262,11 +268,13 @@ class PeopleSegmentTabs extends StatelessWidget {
     required this.tabs,
     required this.selectedIndex,
     required this.onSelected,
+    this.tabBadges = const {},
   });
 
   final List<String> tabs;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final Map<int, int> tabBadges;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +287,7 @@ class PeopleSegmentTabs extends StatelessWidget {
       child: Row(
         children: List.generate(tabs.length, (index) {
           final selected = index == selectedIndex;
+          final badge = tabBadges[index];
           return Expanded(
             child: GestureDetector(
               onTap: () => onSelected(index),
@@ -289,13 +298,44 @@ class PeopleSegmentTabs extends StatelessWidget {
                   color: selected ? AppColors.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  tabs[index],
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: selected ? Colors.white : AppColors.inkSecondary,
-                        fontWeight: FontWeight.w600,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        tabs[index],
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color:
+                                  selected ? Colors.white : AppColors.inkSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
+                    ),
+                    if (badge != null && badge > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Colors.white.withValues(alpha: 0.22)
+                              : AppColors.accent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$badge',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: selected ? Colors.white : AppColors.accent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -364,6 +404,154 @@ class IdentityBannerCard extends StatelessWidget {
                 child: const Icon(Icons.arrow_forward, color: AppColors.accent),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PublicProfileAvatar extends StatelessWidget {
+  const PublicProfileAvatar({super.key, required this.profile, this.radius = 24});
+
+  final PublicProfileModel profile;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.surfaceElevated,
+      backgroundImage:
+          profile.avatarUrl != null ? NetworkImage(profile.avatarUrl!) : null,
+      child: profile.avatarUrl == null
+          ? Text(
+              profile.displayName.isNotEmpty
+                  ? profile.displayName[0].toUpperCase()
+                  : '?',
+            )
+          : null,
+    );
+  }
+}
+
+class FriendConnectionButton extends ConsumerWidget {
+  const FriendConnectionButton({
+    super.key,
+    required this.profile,
+    required this.connection,
+    required this.userId,
+    this.compact = false,
+  });
+
+  final PublicProfileModel profile;
+  final FriendConnection connection;
+  final String? userId;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (userId == null || userId == profile.userId) {
+      return const SizedBox.shrink();
+    }
+
+    switch (connection.state) {
+      case FriendConnectionState.accepted:
+        return _FriendActionChip(label: 'Friends', enabled: false);
+      case FriendConnectionState.outgoingPending:
+        return _FriendActionChip(label: 'Request Sent', enabled: false);
+      case FriendConnectionState.incomingPending:
+        return compact
+            ? _FriendActionChip(
+                label: 'Respond',
+                enabled: true,
+                onTap: () => context.push('/people/${profile.handle}'),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ProofButton(
+                    label: 'Accept',
+                    onPressed: () => _respond(ref, accept: true),
+                  ),
+                  const SizedBox(width: 8),
+                  ProofButton(
+                    label: 'Decline',
+                    isOutlined: true,
+                    onPressed: () => _respond(ref, accept: false),
+                  ),
+                ],
+              );
+      case FriendConnectionState.blocked:
+        return _FriendActionChip(label: 'Blocked', enabled: false);
+      case FriendConnectionState.declined:
+      case FriendConnectionState.none:
+        return compact
+            ? _FriendActionChip(
+                label: 'Add Friend',
+                enabled: true,
+                onTap: () => _sendRequest(context, ref),
+              )
+            : ProofButton(
+                label: 'Add Friend',
+                onPressed: () => _sendRequest(context, ref),
+              );
+    }
+  }
+
+  Future<void> _sendRequest(BuildContext context, WidgetRef ref) async {
+    final fromUserId = ref.read(authStateProvider).valueOrNull?.uid;
+    if (fromUserId == null) return;
+
+    await ref.read(firestoreServiceProvider).sendFriendRequest(
+          fromUserId: fromUserId,
+          toUserId: profile.userId,
+        );
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Friend request sent to ${profile.displayName}')),
+      );
+    }
+  }
+
+  Future<void> _respond(WidgetRef ref, {required bool accept}) async {
+    final relationship = connection.relationship;
+    if (relationship == null) return;
+    await ref.read(firestoreServiceProvider).respondToRelationship(
+          relationshipId: relationship.id,
+          accept: accept,
+        );
+  }
+}
+
+class _FriendActionChip extends StatelessWidget {
+  const _FriendActionChip({
+    required this.label,
+    required this.enabled,
+    this.onTap,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: enabled ? AppColors.accent : AppColors.surfaceElevated,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: enabled ? Colors.white : AppColors.inkSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ),
       ),

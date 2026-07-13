@@ -9,6 +9,7 @@ import 'package:proof/core/utils/skill_stack_reconciler.dart';
 import 'package:proof/core/utils/skill_uniqueness.dart';
 import 'package:proof/core/utils/timeline_milestone_evaluator.dart';
 import 'package:proof/core/utils/timeline_rebuilder.dart';
+import 'package:proof/features/people/domain/friend_request_policy.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
@@ -26,6 +27,7 @@ import 'package:proof/shared/models/onboarding_draft.dart';
 import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
+import 'package:proof/shared/models/public_profile_model.dart';
 import 'package:proof/shared/models/verification_status.dart';
 
 class FirestoreService {
@@ -74,6 +76,9 @@ class FirestoreService {
 
   CollectionReference<Map<String, dynamic>> get _gymHandles =>
       _firestore.collection(FirestorePaths.gymHandles);
+
+  CollectionReference<Map<String, dynamic>> get _publicProfiles =>
+      _firestore.collection(FirestorePaths.publicProfiles);
 
   static const int timelineMigrationVersion = 2;
   static const int skillMergeVersion = 2;
@@ -208,6 +213,7 @@ class FirestoreService {
     );
 
     await batch.commit();
+    await syncPublicProfile(identity.userId);
     await _recordTimelineMilestones(
       identity.userId,
       TimelineMilestoneEvaluator.evaluateIdentityCreated(identity: identity),
@@ -228,6 +234,7 @@ class FirestoreService {
     }
 
     await batch.commit();
+    await syncPublicProfile(identity.userId);
   }
 
   Future<PhysicalIdentity?> getIdentity(String userId) async {
@@ -864,7 +871,80 @@ class FirestoreService {
       'avatarUrl': avatarUrl,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    await syncPublicProfile(userId);
     await _syncCoachProfileIfNeeded(userId);
+  }
+
+  // ── Public profiles (people discovery) ──────────────────────────────────
+
+  Future<PublicProfileModel?> getPublicProfile(String userId) async {
+    final doc = await _publicProfiles.doc(userId).get();
+    if (!doc.exists) return null;
+    return PublicProfileModel.fromFirestore(doc);
+  }
+
+  Stream<List<PublicProfileModel>> watchSearchablePublicProfiles() {
+    return _publicProfiles
+        .where('searchable', isEqualTo: true)
+        .limit(300)
+        .snapshots()
+        .map(
+          (snap) => snap.docs.map(PublicProfileModel.fromFirestore).toList(),
+        );
+  }
+
+  Future<void> syncPublicProfile(String userId) async {
+    final identity = await getIdentity(userId);
+    if (identity == null || !identity.isPublic) {
+      await _publicProfiles.doc(userId).delete();
+      return;
+    }
+
+    final skillsSnap = await _skillsRef(userId).get();
+    final skills = skillsSnap.docs
+        .map(SkillModel.fromFirestore)
+        .where((s) => s.status == SkillStatus.active)
+        .toList()
+      ..sort((a, b) {
+        final aConf = a.stackConfidence?.value ?? '';
+        final bConf = b.stackConfidence?.value ?? '';
+        return bConf.compareTo(aConf);
+      });
+
+    final topSkills = skills.take(3).map((skill) {
+      final result = skill.formattedCurrentBest ?? skill.name;
+      return PublicTopSkill(name: skill.name, resultLabel: result);
+    }).toList();
+
+    final identityStatus = skills.isEmpty
+        ? 'Starting'
+        : (skills.first.stackConfidence?.label ?? 'Developing');
+
+    final profile = PublicProfileModel(
+      userId: userId,
+      displayName: identity.displayName,
+      displayNameLowercase: identity.displayName.toLowerCase(),
+      handle: identity.handle,
+      handleLowercase: identity.handle.toLowerCase(),
+      avatarUrl: identity.avatarUrl,
+      city: identity.location,
+      bio: identity.bio,
+      identityStatus: identityStatus,
+      publicTopSkills: topSkills,
+      searchable: true,
+      updatedAt: DateTime.now(),
+    );
+
+    await _publicProfiles.doc(userId).set(profile.toFirestore());
+  }
+
+  Future<PublicProfileModel?> getOrSyncPublicProfileByHandle(
+    String handle,
+  ) async {
+    final userId = await resolveUserIdByHandle(handle);
+    if (userId == null) return null;
+    await syncPublicProfile(userId);
+    return getPublicProfile(userId);
   }
 
   // ── Relationships ─────────────────────────────────────────────────────────
@@ -911,32 +991,89 @@ class FirestoreService {
     );
   }
 
+  Future<RelationshipModel?> findFriendRelationship(
+    String userIdA,
+    String userIdB,
+  ) async {
+    final docId = RelationshipModel.friendDocId(userIdA, userIdB);
+    final direct = await _relationships.doc(docId).get();
+    if (direct.exists) {
+      return RelationshipModel.fromFirestore(direct);
+    }
+
+    final legacy = await _relationships
+        .where('type', isEqualTo: RelationshipType.friend.value)
+        .where('fromUserId', whereIn: [userIdA, userIdB])
+        .get();
+
+    for (final doc in legacy.docs) {
+      final model = RelationshipModel.fromFirestore(doc);
+      final matchesPair = (model.fromUserId == userIdA && model.toUserId == userIdB) ||
+          (model.fromUserId == userIdB && model.toUserId == userIdA);
+      if (matchesPair) return model;
+    }
+    return null;
+  }
+
   Future<void> sendFriendRequest({
     required String fromUserId,
     required String toUserId,
   }) async {
-    if (fromUserId == toUserId) return;
+    final existing = await findFriendRelationship(fromUserId, toUserId);
 
-    final existing = await _relationships
-        .where('fromUserId', isEqualTo: fromUserId)
-        .where('toUserId', isEqualTo: toUserId)
-        .where('type', isEqualTo: RelationshipType.friend.value)
-        .limit(1)
-        .get();
+    final reversePending = existing == null
+        ? await _relationships
+            .where('fromUserId', isEqualTo: toUserId)
+            .where('toUserId', isEqualTo: fromUserId)
+            .where('type', isEqualTo: RelationshipType.friend.value)
+            .where('status', isEqualTo: RelationshipStatus.pending.value)
+            .limit(1)
+            .get()
+        : null;
 
-    if (existing.docs.isNotEmpty) return;
-
-    final id = _relationships.doc().id;
-    await _relationships.doc(id).set(
-      RelationshipModel(
-        id: id,
-        fromUserId: fromUserId,
-        toUserId: toUserId,
-        type: RelationshipType.friend,
-        status: RelationshipStatus.pending,
-        createdAt: DateTime.now(),
-      ).toFirestore(),
+    final action = FriendRequestPolicy.decide(
+      fromUserId: fromUserId,
+      toUserId: toUserId,
+      existing: existing,
+      reversePendingExists:
+          reversePending != null && reversePending.docs.isNotEmpty,
     );
+
+    switch (action) {
+      case FriendRequestAction.none:
+        return;
+      case FriendRequestAction.acceptExisting:
+        final relationshipId = existing?.id ??
+            reversePending!.docs.first.id;
+        await respondToRelationship(
+          relationshipId: relationshipId,
+          accept: true,
+        );
+        return;
+      case FriendRequestAction.reopenDeclined:
+        await _relationships.doc(existing!.id).update({
+          'status': RelationshipStatus.pending.value,
+          'createdAt': FieldValue.serverTimestamp(),
+          'respondedAt': null,
+          'requesterSeen': true,
+          'recipientSeen': false,
+        });
+        return;
+      case FriendRequestAction.createPending:
+        final id = RelationshipModel.friendDocId(fromUserId, toUserId);
+        await _relationships.doc(id).set(
+          RelationshipModel(
+            id: id,
+            fromUserId: fromUserId,
+            toUserId: toUserId,
+            type: RelationshipType.friend,
+            status: RelationshipStatus.pending,
+            createdAt: DateTime.now(),
+            requesterSeen: true,
+            recipientSeen: false,
+          ).toFirestore(),
+        );
+    }
   }
 
   Future<void> respondToRelationship({
@@ -946,8 +1083,49 @@ class FirestoreService {
     await _relationships.doc(relationshipId).update({
       'status': accept
           ? RelationshipStatus.accepted.value
-          : RelationshipStatus.rejected.value,
+          : RelationshipStatus.declined.value,
+      'respondedAt': FieldValue.serverTimestamp(),
+      'recipientSeen': true,
+      'requesterSeen': false,
     });
+  }
+
+  Future<void> removeFriend(String relationshipId) async {
+    await _relationships.doc(relationshipId).delete();
+  }
+
+  Future<void> blockUser({
+    required String fromUserId,
+    required String toUserId,
+  }) async {
+    final existing = await findFriendRelationship(fromUserId, toUserId);
+    final id = existing?.id ?? RelationshipModel.friendDocId(fromUserId, toUserId);
+    await _relationships.doc(id).set(
+      RelationshipModel(
+        id: id,
+        fromUserId: fromUserId,
+        toUserId: toUserId,
+        type: RelationshipType.friend,
+        status: RelationshipStatus.blocked,
+        createdAt: existing?.createdAt ?? DateTime.now(),
+        respondedAt: DateTime.now(),
+        requesterSeen: true,
+        recipientSeen: true,
+      ).toFirestore(),
+    );
+  }
+
+  Future<void> markIncomingFriendRequestsSeen(String userId) async {
+    final snap = await _relationships
+        .where('toUserId', isEqualTo: userId)
+        .where('type', isEqualTo: RelationshipType.friend.value)
+        .where('status', isEqualTo: RelationshipStatus.pending.value)
+        .get();
+    final batch = _firestore.batch();
+    for (final doc in snap.docs) {
+      batch.update(doc.reference, {'recipientSeen': true});
+    }
+    await batch.commit();
   }
 
   // ── Coach profiles ────────────────────────────────────────────────────────

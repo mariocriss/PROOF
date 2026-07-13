@@ -140,7 +140,7 @@ class MoreScreen extends ConsumerWidget {
                     icon: Icons.people_outline,
                     title: 'Friends',
                     subtitle: 'Connect with people you trust',
-                    badge: counts.friends,
+                    badge: counts.friendRequests > 0 ? counts.friendRequests : null,
                     onTap: () => context.push('/friends'),
                   ),
                   MoreMenuRow(
@@ -166,7 +166,7 @@ class MoreScreen extends ConsumerWidget {
                     icon: Icons.person_add_outlined,
                     title: 'Friend Requests',
                     subtitle: 'People who want to connect',
-                    badge: counts.friendRequests,
+                    badge: counts.friendRequests > 0 ? counts.friendRequests : null,
                     onTap: () => context.push('/friend-requests'),
                   ),
                 ],
