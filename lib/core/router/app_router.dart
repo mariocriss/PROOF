@@ -406,7 +406,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) {
           final handle = state.pathParameters['handle']!;
-          return PassportScreen(handle: handle);
+          return PassportScreen(
+            handle: handle,
+            gymId: state.uri.queryParameters['gymId'],
+          );
         },
       ),
     ],

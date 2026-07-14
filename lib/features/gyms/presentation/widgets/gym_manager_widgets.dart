@@ -300,26 +300,36 @@ class GymQuickActionTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.badge,
+    this.highlighted = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final int? badge;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
+    final bg = highlighted ? AppColors.accent : AppColors.surface;
+    final border = highlighted
+        ? AppColors.accent
+        : AppColors.border;
+    final iconColor = highlighted ? Colors.white : AppColors.accent;
+    final textColor = highlighted ? Colors.white : AppColors.ink;
+
     return Material(
-      color: AppColors.surface,
+      color: bg,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          width: 92,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,21 +337,23 @@ class GymQuickActionTile extends StatelessWidget {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Icon(icon, color: AppColors.accent, size: 22),
+                  Icon(icon, color: iconColor, size: 22),
                   if (badge != null && badge! > 0)
                     Positioned(
                       right: -8,
                       top: -6,
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: AppColors.accent,
+                        decoration: BoxDecoration(
+                          color: highlighted ? Colors.white : AppColors.accent,
                           shape: BoxShape.circle,
                         ),
                         child: Text(
                           '$badge',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: highlighted
+                                ? AppColors.accent
+                                : Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
@@ -350,12 +362,13 @@ class GymQuickActionTile extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 label,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w600,
-                      height: 1.3,
+                      height: 1.25,
+                      color: textColor,
                     ),
               ),
             ],
@@ -486,9 +499,7 @@ class GymManagerEmptyPanel extends StatelessWidget {
 }
 
 class GymCaughtUpCard extends StatelessWidget {
-  const GymCaughtUpCard({super.key, required this.gymName});
-
-  final String gymName;
+  const GymCaughtUpCard({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -510,7 +521,7 @@ class GymCaughtUpCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'There are no pending requests for $gymName.',
+            'There are no pending membership requests.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: AppColors.inkMuted,
                   height: 1.4,
@@ -543,7 +554,7 @@ class GymProfileCompletenessCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Gym Profile',
+              'Complete your gym profile',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -568,9 +579,10 @@ class GymProfileCompletenessCard extends StatelessWidget {
             if (completeness.missingFields.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
-                'Missing: ${completeness.missingFields.take(3).join(', ')}',
+                'Missing:\n${completeness.missingFields.take(3).join(', ')}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppColors.inkSecondary,
+                      height: 1.4,
                     ),
               ),
             ],
@@ -616,6 +628,303 @@ class GymSearchField extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.border),
         ),
+      ),
+    );
+  }
+}
+
+class GymNeedsAttentionCard extends StatelessWidget {
+  const GymNeedsAttentionCard({
+    super.key,
+    required this.athleteRequests,
+    required this.coachRequests,
+    required this.onAthleteTap,
+    required this.onCoachTap,
+  });
+
+  final int athleteRequests;
+  final int coachRequests;
+  final VoidCallback onAthleteTap;
+  final VoidCallback onCoachTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.accent,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Needs Attention',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              if (athleteRequests > 0)
+                Expanded(
+                  child: _AttentionMetric(
+                    count: athleteRequests,
+                    label: athleteRequests == 1
+                        ? 'Athlete Request'
+                        : 'Athlete Requests',
+                    onTap: onAthleteTap,
+                  ),
+                ),
+              if (athleteRequests > 0 && coachRequests > 0)
+                const SizedBox(width: 16),
+              if (coachRequests > 0)
+                Expanded(
+                  child: _AttentionMetric(
+                    count: coachRequests,
+                    label: coachRequests == 1
+                        ? 'Coach Request'
+                        : 'Coach Requests',
+                    onTap: onCoachTap,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttentionMetric extends StatelessWidget {
+  const _AttentionMetric({
+    required this.count,
+    required this.label,
+    required this.onTap,
+  });
+
+  final int count;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$count $label',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        height: 1.3,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class GymCommunityCard extends StatelessWidget {
+  const GymCommunityCard({
+    super.key,
+    required this.memberCount,
+    required this.coachCount,
+    required this.onMembersTap,
+    required this.onCoachesTap,
+  });
+
+  final int memberCount;
+  final int coachCount;
+  final VoidCallback onMembersTap;
+  final VoidCallback onCoachesTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GymManagerCard(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            _TappableStat(
+              count: memberCount,
+              label: memberCount == 1 ? 'Member' : 'Members',
+              onTap: onMembersTap,
+            ),
+            Container(
+              width: 1,
+              color: AppColors.divider,
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+            ),
+            _TappableStat(
+              count: coachCount,
+              label: coachCount == 1 ? 'Coach' : 'Coaches',
+              onTap: onCoachesTap,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TappableStat extends StatelessWidget {
+  const _TappableStat({
+    required this.count,
+    required this.label,
+    required this.onTap,
+  });
+
+  final int count;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Semantics(
+        button: true,
+        label: '$count $label',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: GymOverviewStat(count: count, label: label),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class GymTrustMetricsCard extends StatelessWidget {
+  const GymTrustMetricsCard({
+    super.key,
+    required this.coachVerifications,
+    this.proofsRecorded,
+  });
+
+  final int coachVerifications;
+  final int? proofsRecorded;
+
+  @override
+  Widget build(BuildContext context) {
+    if (coachVerifications <= 0 && (proofsRecorded ?? 0) <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    return GymManagerCard(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            if (coachVerifications > 0) ...[
+              GymOverviewStat(
+                count: coachVerifications,
+                label: coachVerifications == 1
+                    ? 'Coach Verification'
+                    : 'Coach Verifications',
+              ),
+              if (proofsRecorded != null && proofsRecorded! > 0) ...[
+                Container(
+                  width: 1,
+                  color: AppColors.divider,
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                ),
+                GymOverviewStat(
+                  count: proofsRecorded!,
+                  label: 'Proofs Recorded',
+                ),
+              ],
+            ] else if (proofsRecorded != null && proofsRecorded! > 0)
+              GymOverviewStat(
+                count: proofsRecorded!,
+                label: 'Proofs Recorded',
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class GymQuickActionsRow extends StatelessWidget {
+  const GymQuickActionsRow({
+    super.key,
+    required this.pendingRequestCount,
+    required this.onReviewRequests,
+    required this.onMembers,
+    required this.onInviteCoach,
+    required this.onSettings,
+  });
+
+  final int pendingRequestCount;
+  final VoidCallback onReviewRequests;
+  final VoidCallback onMembers;
+  final VoidCallback onInviteCoach;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 108,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          GymQuickActionTile(
+            icon: Icons.inbox_outlined,
+            label: 'Review Requests',
+            badge: pendingRequestCount > 0 ? pendingRequestCount : null,
+            highlighted: pendingRequestCount > 0,
+            onTap: onReviewRequests,
+          ),
+          const SizedBox(width: 10),
+          GymQuickActionTile(
+            icon: Icons.people_outline,
+            label: 'Members',
+            onTap: onMembers,
+          ),
+          const SizedBox(width: 10),
+          GymQuickActionTile(
+            icon: Icons.person_add_outlined,
+            label: 'Invite Coach',
+            onTap: onInviteCoach,
+          ),
+          const SizedBox(width: 10),
+          GymQuickActionTile(
+            icon: Icons.settings_outlined,
+            label: 'Gym Settings',
+            onTap: onSettings,
+          ),
+        ],
       ),
     );
   }

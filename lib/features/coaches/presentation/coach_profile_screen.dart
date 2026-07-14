@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
+import 'package:proof/features/gyms/presentation/gym_membership_actions.dart';
 import 'package:proof/shared/models/gym_membership_model.dart';
 import 'package:proof/shared/models/relationship_model.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
@@ -236,6 +237,12 @@ class CoachProfileScreen extends ConsumerWidget {
                     }
                   },
                 ),
+              if (isApprovedAtManagedGym)
+                _GymManagerCoachRemoveSection(
+                  membership: approvedGymMembership,
+                  coachName: identity.displayName,
+                  gymName: approvedGymName!,
+                ),
             ],
           ),
         );
@@ -272,6 +279,55 @@ class CoachProfileScreen extends ConsumerWidget {
     final sorted = counts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return sorted.take(5).map((e) => e.key).toList();
+  }
+}
+
+class _GymManagerCoachRemoveSection extends ConsumerWidget {
+  const _GymManagerCoachRemoveSection({
+    required this.membership,
+    required this.coachName,
+    required this.gymName,
+  });
+
+  final GymMembershipModel membership;
+  final String coachName;
+  final String gymName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Divider(color: AppColors.divider),
+          const SizedBox(height: 24),
+          Text(
+            'Gym membership',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppColors.inkMuted,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          ProofButton(
+            label: 'Remove from $gymName',
+            isOutlined: true,
+            onPressed: () async {
+              await confirmRemoveGymMembership(
+                context,
+                ref,
+                membership: membership,
+                personName: coachName,
+                gymName: gymName,
+              );
+              if (context.mounted) context.pop();
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 

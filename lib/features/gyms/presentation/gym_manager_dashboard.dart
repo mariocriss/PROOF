@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
-import 'package:proof/core/utils/date_utils.dart';
 import 'package:proof/features/gyms/domain/gym_manager_view_data.dart';
+import 'package:proof/features/gyms/presentation/widgets/gym_manager_roster_widgets.dart';
 import 'package:proof/features/gyms/presentation/widgets/gym_manager_widgets.dart';
 import 'package:proof/features/people/presentation/widgets/people_widgets.dart';
 import 'package:proof/shared/models/gym_membership_model.dart';
@@ -138,6 +138,7 @@ class _GymManagerDashboardScreenState
           _OverviewTab(
             data: data,
             onNavigate: _goToTab,
+            onInviteCoach: () => _showInviteCoach(context),
             membershipsLoading: membershipsLoading,
             membershipsError: membershipsError,
             onRetryMemberships: () => ref.invalidate(
@@ -222,10 +223,11 @@ class _GymManagerDashboardScreenState
   }
 }
 
-class _OverviewTab extends StatelessWidget {
+class _OverviewTab extends ConsumerWidget {
   const _OverviewTab({
     required this.data,
     required this.onNavigate,
+    required this.onInviteCoach,
     this.membershipsLoading = false,
     this.membershipsError,
     this.onRetryMemberships,
@@ -233,14 +235,27 @@ class _OverviewTab extends StatelessWidget {
 
   final GymManagerDashboardData data;
   final void Function(int tab, {int? requestsSubTab}) onNavigate;
+  final VoidCallback onInviteCoach;
   final bool membershipsLoading;
   final Object? membershipsError;
   final VoidCallback? onRetryMemberships;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final gym = data.gym;
     final stats = data.stats;
+
+    var coachVerifications = 0;
+    for (final membership in data.approvedCoaches) {
+      final coach = ref.watch(coachProfileProvider(membership.userId)).valueOrNull;
+      if (coach != null) {
+        coachVerifications += coach.verifiedProofCount;
+      }
+    }
+
+    final hasPending = stats.pendingAthleteRequests > 0 ||
+        stats.pendingCoachRequests > 0;
+    final recentActivity = data.activity.take(5).toList();
 
     return ColoredBox(
       color: AppColors.background,
@@ -248,190 +263,199 @@ class _OverviewTab extends StatelessWidget {
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  IdentityAvatar(
-                    avatarUrl: gym.logoUrl,
-                    displayName: gym.name,
-                    radius: 28,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          gym.name,
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.5,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '@${gym.handle}',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.inkMuted,
-                              ),
-                        ),
-                        if (data.locationLabel.isNotEmpty) ...[
-                          const SizedBox(height: 4),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    IdentityAvatar(
+                      avatarUrl: gym.logoUrl,
+                      displayName: gym.name,
+                      radius: 28,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            data.locationLabel,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppColors.inkSecondary,
+                            gym.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.5,
                                 ),
                           ),
-                        ],
-                        const SizedBox(height: 10),
-                        GymStatusBadge(status: gym.status),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: () => onNavigate(4),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (membershipsLoading)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 16),
-                      child: LinearProgressIndicator(minHeight: 2),
-                    ),
-                  if (membershipsError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: GymManagerCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            '@${gym.handle}',
+                            style:
+                                Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: AppColors.inkMuted,
+                                    ),
+                          ),
+                          if (data.locationLabel.isNotEmpty) ...[
+                            const SizedBox(height: 4),
                             Text(
-                              'Could not load membership data',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '$membershipsError',
+                              data.locationLabel,
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall
-                                  ?.copyWith(color: AppColors.inkMuted),
+                                  ?.copyWith(
+                                    color: AppColors.inkSecondary,
+                                  ),
                             ),
-                            if (onRetryMemberships != null) ...[
-                              const SizedBox(height: 12),
-                              ProofButton(
-                                label: 'Retry',
-                                onPressed: onRetryMemberships,
-                              ),
-                            ],
                           ],
-                        ),
-                      ),
-                    ),
-                  const GymManagerSectionLabel(title: 'OVERVIEW'),
-                  GymManagerCard(
-                    child: IntrinsicHeight(
-                      child: Row(
-                        children: [
-                          GymOverviewStat(
-                            count: stats.approvedAthletes,
-                            label: 'Athletes',
-                          ),
-                          Container(
-                            width: 1,
-                            color: AppColors.divider,
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                          ),
-                          GymOverviewStat(
-                            count: stats.approvedCoaches,
-                            label: 'Coaches',
-                          ),
+                          const SizedBox(height: 10),
+                          GymStatusBadge(status: gym.status),
                         ],
                       ),
                     ),
-                  ),
-                  if (stats.pendingAthleteRequests > 0 ||
-                      stats.pendingCoachRequests > 0) ...[
-                    const SizedBox(height: 12),
-                    GymManagerCard(
-                      child: InkWell(
-                        onTap: () => onNavigate(1),
-                        borderRadius: BorderRadius.circular(16),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${stats.pendingAthleteRequests + stats.pendingCoachRequests} pending request${stats.pendingAthleteRequests + stats.pendingCoachRequests == 1 ? '' : 's'}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall
-                                          ?.copyWith(fontWeight: FontWeight.w600),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Tap to review in Requests',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(color: AppColors.inkMuted),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(
-                                Icons.chevron_right,
-                                color: AppColors.inkMuted,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                    IconButton(
+                      tooltip: 'Gym settings',
+                      icon: const Icon(Icons.settings_outlined),
+                      onPressed: () => onNavigate(4),
                     ),
                   ],
-                  if (!data.completeness.isComplete) ...[
-                    const SizedBox(height: 28),
-                    GymProfileCompletenessCard(
-                      completeness: data.completeness,
-                      onComplete: () => onNavigate(4),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (membershipsLoading) ...[
+                      const GymManagerSkeleton(),
+                    ] else ...[
+                      if (membershipsError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: GymManagerCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Could not load membership data',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '$membershipsError',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: AppColors.inkMuted),
+                                ),
+                                if (onRetryMemberships != null) ...[
+                                  const SizedBox(height: 12),
+                                  ProofButton(
+                                    label: 'Retry',
+                                    onPressed: onRetryMemberships,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      const GymManagerSectionLabel(title: 'NEEDS ATTENTION'),
+                      if (hasPending)
+                        GymNeedsAttentionCard(
+                          athleteRequests: stats.pendingAthleteRequests,
+                          coachRequests: stats.pendingCoachRequests,
+                          onAthleteTap: () =>
+                              onNavigate(1, requestsSubTab: 0),
+                          onCoachTap: () => onNavigate(1, requestsSubTab: 1),
+                        )
+                      else
+                        const GymCaughtUpCard(),
+                      const SizedBox(height: 24),
+                      const GymManagerSectionLabel(title: 'COMMUNITY'),
+                      GymCommunityCard(
+                        memberCount: stats.approvedAthletes,
+                        coachCount: stats.approvedCoaches,
+                        onMembersTap: () => onNavigate(2),
+                        onCoachesTap: () => onNavigate(3),
+                      ),
+                      if (coachVerifications > 0) ...[
+                        const SizedBox(height: 24),
+                        const GymManagerSectionLabel(title: 'TRUST & ACTIVITY'),
+                        GymTrustMetricsCard(
+                          coachVerifications: coachVerifications,
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      const GymManagerSectionLabel(title: 'RECENT ACTIVITY'),
+                      GymManagerCard(
+                        child: recentActivity.isEmpty
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'No activity yet',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Membership approvals and gym updates will appear here.',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: AppColors.inkMuted,
+                                          height: 1.45,
+                                        ),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: recentActivity
+                                    .map((item) => GymActivityRow(item: item))
+                                    .toList(),
+                              ),
+                      ),
+                      const SizedBox(height: 24),
+                      const GymManagerSectionLabel(title: 'QUICK ACTIONS'),
+                      GymQuickActionsRow(
+                        pendingRequestCount: stats.pendingAthleteRequests +
+                            stats.pendingCoachRequests,
+                        onReviewRequests: () => onNavigate(1),
+                        onMembers: () => onNavigate(2),
+                        onInviteCoach: onInviteCoach,
+                        onSettings: () => onNavigate(4),
+                      ),
+                      if (!data.completeness.isComplete) ...[
+                        const SizedBox(height: 28),
+                        GymProfileCompletenessCard(
+                          completeness: data.completeness,
+                          onComplete: () => onNavigate(4),
+                        ),
+                      ],
+                    ],
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _RequestsTab extends StatefulWidget {
+class _RequestsTab extends ConsumerStatefulWidget {
   const _RequestsTab({
     required this.data,
     required this.initialSubTab,
@@ -443,10 +467,10 @@ class _RequestsTab extends StatefulWidget {
   final ValueChanged<int> onSubTabChanged;
 
   @override
-  State<_RequestsTab> createState() => _RequestsTabState();
+  ConsumerState<_RequestsTab> createState() => _RequestsTabState();
 }
 
-class _RequestsTabState extends State<_RequestsTab> {
+class _RequestsTabState extends ConsumerState<_RequestsTab> {
   late int _subTab;
 
   @override
@@ -465,7 +489,6 @@ class _RequestsTabState extends State<_RequestsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final gym = widget.data.gym;
     final pending = _subTab == 0
         ? widget.data.athletePending
         : widget.data.coachPending;
@@ -486,28 +509,14 @@ class _RequestsTabState extends State<_RequestsTab> {
           const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                _RequestTabChip(
-                  label: 'Athletes',
-                  badge: widget.data.stats.pendingAthleteRequests,
-                  selected: _subTab == 0,
-                  onTap: () {
-                    setState(() => _subTab = 0);
-                    widget.onSubTabChanged(0);
-                  },
-                ),
-                const SizedBox(width: 8),
-                _RequestTabChip(
-                  label: 'Coaches',
-                  badge: widget.data.stats.pendingCoachRequests,
-                  selected: _subTab == 1,
-                  onTap: () {
-                    setState(() => _subTab = 1);
-                    widget.onSubTabChanged(1);
-                  },
-                ),
-              ],
+            child: GymSegmentedRequestControl(
+              athleteCount: widget.data.stats.pendingAthleteRequests,
+              coachCount: widget.data.stats.pendingCoachRequests,
+              selectedIndex: _subTab,
+              onChanged: (index) {
+                setState(() => _subTab = index);
+                widget.onSubTabChanged(index);
+              },
             ),
           ),
           const SizedBox(height: 16),
@@ -516,18 +525,25 @@ class _RequestsTabState extends State<_RequestsTab> {
               padding: const EdgeInsets.all(24),
               children: pending.isEmpty
                   ? [
-                      GymManagerEmptyPanel(
-                        title: _subTab == 0
-                            ? 'No athlete requests'
-                            : 'No coach requests',
+                      GymCompactEmptyState(
+                        title: 'All caught up',
                         description: _subTab == 0
-                            ? 'When athletes select ${gym.name} as their gym, their membership requests will appear here.'
-                            : 'Coaches who want to join this gym will appear here for review.',
-                        icon: Icons.inbox_outlined,
+                            ? 'There are no pending athlete requests.'
+                            : 'There are no pending coach requests.',
                       ),
                     ]
                   : pending
-                      .map((m) => _MembershipRequestCard(membership: m))
+                      .map(
+                        (m) => GymMembershipRequestCard(
+                          membership: m,
+                          onReview: (status) => _reviewMembership(
+                            context,
+                            ref,
+                            membership: m,
+                            status: status,
+                          ),
+                        ),
+                      )
                       .toList(),
             ),
           ),
@@ -537,41 +553,16 @@ class _RequestsTabState extends State<_RequestsTab> {
   }
 }
 
-class _RequestTabChip extends StatelessWidget {
-  const _RequestTabChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.badge = 0,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final int badge;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilterChip(
-      label: Text(badge > 0 ? '$label ($badge)' : label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      selectedColor: AppColors.accent.withValues(alpha: 0.15),
-      checkmarkColor: AppColors.accent,
-    );
-  }
-}
-
-class _MembersTab extends StatefulWidget {
+class _MembersTab extends ConsumerStatefulWidget {
   const _MembersTab({required this.data});
 
   final GymManagerDashboardData data;
 
   @override
-  State<_MembersTab> createState() => _MembersTabState();
+  ConsumerState<_MembersTab> createState() => _MembersTabState();
 }
 
-class _MembersTabState extends State<_MembersTab> {
+class _MembersTabState extends ConsumerState<_MembersTab> {
   final _search = TextEditingController();
 
   @override
@@ -602,7 +593,7 @@ class _MembersTabState extends State<_MembersTab> {
                 const SizedBox(height: 12),
                 GymSearchField(
                   controller: _search,
-                  hint: 'Search athletes',
+                  hint: 'Search members',
                   onChanged: (_) => setState(() {}),
                 ),
               ],
@@ -613,19 +604,16 @@ class _MembersTabState extends State<_MembersTab> {
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               children: members.isEmpty
                   ? [
-                      GymManagerEmptyPanel(
-                        title: 'No approved members yet',
-                        description:
-                            'Approved athletes will appear here once you accept their membership requests.',
-                        icon: Icons.people_outline,
+                      const GymCompactEmptyState(
+                        title: 'No members yet',
+                        description: 'Approved athletes will appear here.',
                       ),
                     ]
                   : members
                       .map(
-                        (m) => _MemberCard(
+                        (m) => GymMemberRosterCard(
                           membership: m,
                           searchQuery: query,
-                          gymName: widget.data.gym.name,
                         ),
                       )
                       .toList(),
@@ -637,17 +625,17 @@ class _MembersTabState extends State<_MembersTab> {
   }
 }
 
-class _CoachesTab extends StatefulWidget {
+class _CoachesTab extends ConsumerStatefulWidget {
   const _CoachesTab({required this.data, required this.onInvite});
 
   final GymManagerDashboardData data;
   final VoidCallback onInvite;
 
   @override
-  State<_CoachesTab> createState() => _CoachesTabState();
+  ConsumerState<_CoachesTab> createState() => _CoachesTabState();
 }
 
-class _CoachesTabState extends State<_CoachesTab> {
+class _CoachesTabState extends ConsumerState<_CoachesTab> {
   final _search = TextEditingController();
 
   @override
@@ -689,11 +677,9 @@ class _CoachesTabState extends State<_CoachesTab> {
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               children: coaches.isEmpty
                   ? [
-                      GymManagerEmptyPanel(
-                        title: 'No approved coaches yet',
-                        description:
-                            'Approve coach requests or invite a coach to begin building your gym team.',
-                        icon: Icons.sports_outlined,
+                      GymCompactEmptyState(
+                        title: 'No coaches yet',
+                        description: 'Approved coaches will appear here.',
                         action: ProofButton(
                           label: 'Invite Coach',
                           onPressed: widget.onInvite,
@@ -702,9 +688,8 @@ class _CoachesTabState extends State<_CoachesTab> {
                     ]
                   : coaches
                       .map(
-                        (m) => _CoachMemberCard(
+                        (m) => GymCoachRosterCard(
                           membership: m,
-                          gymName: widget.data.gym.name,
                           searchQuery: query,
                         ),
                       )
@@ -908,426 +893,24 @@ class _MoreTab extends ConsumerWidget {
   }
 }
 
-class _MembershipRequestCard extends ConsumerWidget {
-  const _MembershipRequestCard({required this.membership});
-
-  final GymMembershipModel membership;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final identityAsync =
-        ref.watch(identityByUserIdProvider(membership.userId));
-    final coachAsync = ref.watch(coachProfileProvider(membership.userId));
-
-    return identityAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: _SkeletonBox(height: 100),
-      ),
-      error: (e, _) => Text('Error: $e'),
-      data: (identity) {
-        final coach = coachAsync.valueOrNull;
-        final name = identity?.displayName ??
-            coach?.displayName ??
-            'User';
-        final handle = identity?.handle ?? coach?.handle;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IdentityAvatar(
-                    avatarUrl: identity?.avatarUrl ?? coach?.avatarUrl,
-                    displayName: name,
-                    radius: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          membership.membershipType.label,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppColors.inkMuted,
-                              ),
-                        ),
-                        if (handle != null)
-                          Text(
-                            '@$handle',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppColors.accent,
-                                ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: ProofButton(
-                      label: membership.membershipType ==
-                              GymMembershipType.coach
-                          ? 'Approve as Coach'
-                          : 'Approve',
-                      onPressed: () => _review(
-                        context,
-                        ref,
-                        GymMembershipStatus.approved,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ProofButton(
-                      label: 'Decline',
-                      isOutlined: true,
-                      onPressed: () => _review(
-                        context,
-                        ref,
-                        GymMembershipStatus.rejected,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _review(
-    BuildContext context,
-    WidgetRef ref,
-    GymMembershipStatus status,
-  ) async {
-    final userId = ref.read(authStateProvider).valueOrNull?.uid;
-    if (userId == null) return;
-    await ref.read(firestoreServiceProvider).reviewGymMembership(
-          membershipId: membership.id,
-          status: status,
-          reviewedBy: userId,
-        );
-    if (status == GymMembershipStatus.approved &&
-        membership.membershipType == GymMembershipType.coach) {
-      await ref
-          .read(firestoreServiceProvider)
-          .ensureCoachProfile(membership.userId);
-    }
-  }
-}
-
-class _MemberCard extends ConsumerWidget {
-  const _MemberCard({
-    required this.membership,
-    required this.searchQuery,
-    required this.gymName,
-  });
-
-  final GymMembershipModel membership;
-  final String searchQuery;
-  final String gymName;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final identityAsync =
-        ref.watch(identityByUserIdProvider(membership.userId));
-
-    return identityAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: _SkeletonBox(height: 72),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (identity) {
-        final name = identity?.displayName ?? 'Member';
-        if (searchQuery.isNotEmpty &&
-            !name.toLowerCase().contains(searchQuery) &&
-            !(identity?.handle ?? '').contains(searchQuery)) {
-          return const SizedBox.shrink();
-        }
-
-        return _PersonListTile(
-          name: name,
-          handle: identity?.handle,
-          avatarUrl: identity?.avatarUrl,
-          subtitle:
-              'Joined ${ProofDateUtils.formatDate(membership.reviewedAt ?? membership.requestedAt)}',
-          statusLabel: 'Approved',
-          onTap: identity?.handle != null
-              ? () => context.push('/passport/${identity!.handle}')
-              : null,
-          onManage: () => _confirmRemoveMembership(
-            context,
-            ref,
-            membership: membership,
-            personName: name,
-            gymName: gymName,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CoachMemberCard extends ConsumerWidget {
-  const _CoachMemberCard({
-    required this.membership,
-    required this.gymName,
-    required this.searchQuery,
-  });
-
-  final GymMembershipModel membership;
-  final String gymName;
-  final String searchQuery;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final identityAsync =
-        ref.watch(identityByUserIdProvider(membership.userId));
-    final coachAsync = ref.watch(coachProfileProvider(membership.userId));
-
-    return identityAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: _SkeletonBox(height: 88),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (identity) {
-        final coach = coachAsync.valueOrNull;
-        final name = identity?.displayName ?? coach?.displayName ?? 'Coach';
-        final handle = identity?.handle ?? coach?.handle;
-        if (searchQuery.isNotEmpty &&
-            !name.toLowerCase().contains(searchQuery) &&
-            !(handle ?? '').contains(searchQuery) &&
-            !(coach?.specialty ?? '').toLowerCase().contains(searchQuery)) {
-          return const SizedBox.shrink();
-        }
-
-        return _PersonListTile(
-          name: name,
-          handle: handle,
-          avatarUrl: identity?.avatarUrl ?? coach?.avatarUrl,
-          subtitle: coach?.specialty ?? 'Coach at $gymName',
-          trailing: coach != null
-              ? '${coach.verifiedProofCount} verified'
-              : null,
-          statusLabel: 'Approved',
-          onTap: handle != null
-              ? () => context.push(
-                    '/coaches/$handle?gymId=${membership.gymId}',
-                  )
-              : null,
-          onManage: () => _confirmRemoveMembership(
-            context,
-            ref,
-            membership: membership,
-            personName: name,
-            gymName: gymName,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _PersonListTile extends StatelessWidget {
-  const _PersonListTile({
-    required this.name,
-    required this.subtitle,
-    required this.statusLabel,
-    this.handle,
-    this.avatarUrl,
-    this.trailing,
-    this.onTap,
-    this.onManage,
-  });
-
-  final String name;
-  final String subtitle;
-  final String statusLabel;
-  final String? handle;
-  final String? avatarUrl;
-  final String? trailing;
-  final VoidCallback? onTap;
-  final VoidCallback? onManage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              children: [
-                IdentityAvatar(
-                  avatarUrl: avatarUrl,
-                  displayName: name,
-                  radius: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.inkMuted,
-                            ),
-                      ),
-                      if (handle != null)
-                        Text(
-                          '@$handle',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppColors.accent,
-                              ),
-                        ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.accent.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: AppColors.accent,
-                            ),
-                      ),
-                    ),
-                    if (trailing != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        trailing!,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: AppColors.inkMuted,
-                            ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (onManage != null)
-                  IconButton(
-                    tooltip: 'Manage membership',
-                    icon: const Icon(Icons.more_vert, color: AppColors.inkMuted),
-                    onPressed: onManage,
-                  ),
-                if (onTap != null) ...[
-                  const Icon(Icons.chevron_right, color: AppColors.inkMuted),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-Future<void> _confirmRemoveMembership(
+Future<void> _reviewMembership(
   BuildContext context,
   WidgetRef ref, {
   required GymMembershipModel membership,
-  required String personName,
-  required String gymName,
+  required GymMembershipStatus status,
 }) async {
-  final roleLabel = membership.membershipType.label.toLowerCase();
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text('Remove $roleLabel?'),
-      content: Text(
-        'Remove $personName from $gymName? They can request to join again later.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Remove'),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmed != true || !context.mounted) return;
-
-  final managerId = ref.read(authStateProvider).valueOrNull?.uid;
-  if (managerId == null) return;
-
+  final userId = ref.read(authStateProvider).valueOrNull?.uid;
+  if (userId == null) return;
   await ref.read(firestoreServiceProvider).reviewGymMembership(
         membershipId: membership.id,
-        status: GymMembershipStatus.removed,
-        reviewedBy: managerId,
+        status: status,
+        reviewedBy: userId,
       );
-
-  ref.invalidate(gymMembershipsForGymProvider(membership.gymId));
-
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$personName removed from $gymName')),
-    );
-  }
-}
-
-class _SkeletonBox extends StatelessWidget {
-  const _SkeletonBox({required this.height});
-
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(16),
-      ),
-    );
+  if (status == GymMembershipStatus.approved &&
+      membership.membershipType == GymMembershipType.coach) {
+    await ref
+        .read(firestoreServiceProvider)
+        .ensureCoachProfile(membership.userId);
   }
 }
 

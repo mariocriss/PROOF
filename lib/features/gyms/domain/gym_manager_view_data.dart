@@ -1,3 +1,4 @@
+import 'package:proof/core/constants/app_features.dart';
 import 'package:proof/core/utils/date_utils.dart';
 import 'package:proof/shared/models/gym_membership_model.dart';
 import 'package:proof/shared/models/gym_model.dart';
@@ -29,7 +30,8 @@ class GymProfileCompleteness {
 
   static GymProfileCompleteness fromGym(GymModel gym) {
     final checks = <String, bool>{
-      'Gym logo': gym.logoUrl != null && gym.logoUrl!.isNotEmpty,
+      if (AppFeatures.cloudStorageEnabled)
+        'Gym logo': gym.logoUrl != null && gym.logoUrl!.isNotEmpty,
       'Description': gym.description.trim().isNotEmpty,
       'Website': gym.website.trim().isNotEmpty,
       'Contact email': gym.contactEmail.trim().isNotEmpty,

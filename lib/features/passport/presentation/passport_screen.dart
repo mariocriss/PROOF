@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/date_utils.dart';
+import 'package:proof/features/gyms/presentation/gym_membership_actions.dart';
 import 'package:proof/features/passport/domain/passport_view_data.dart';
 import 'package:proof/shared/models/confidence_level.dart';
+import 'package:proof/shared/models/gym_membership_model.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/timeline_event.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/gym_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class PassportScreen extends ConsumerWidget {
@@ -15,10 +18,12 @@ class PassportScreen extends ConsumerWidget {
     super.key,
     required this.handle,
     this.showBackButton = true,
+    this.gymId,
   });
 
   final String handle;
   final bool showBackButton;
+  final String? gymId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -57,6 +62,7 @@ class PassportScreen extends ConsumerWidget {
         return _PassportContent(
           identity: identity,
           showBackButton: showBackButton,
+          gymId: gymId,
         );
       },
     );
@@ -91,10 +97,12 @@ class _PassportContent extends ConsumerStatefulWidget {
   const _PassportContent({
     required this.identity,
     this.showBackButton = true,
+    this.gymId,
   });
 
   final PhysicalIdentity identity;
   final bool showBackButton;
+  final String? gymId;
 
   @override
   ConsumerState<_PassportContent> createState() => _PassportContentState();
@@ -208,6 +216,12 @@ class _PassportContentState extends ConsumerState<_PassportContent> {
               onTap: () => _toggle('stats'),
               child: _StatisticsSection(stats: data.statistics),
             ),
+            if (widget.gymId != null)
+              _GymManagerMemberActions(
+                gymId: widget.gymId!,
+                memberUserId: widget.identity.userId,
+                memberName: widget.identity.displayName,
+              ),
             const SizedBox(height: 24),
           ],
         ),
@@ -687,6 +701,75 @@ class _StatDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Divider(height: 1, color: AppColors.divider);
+  }
+}
+
+class _GymManagerMemberActions extends ConsumerWidget {
+  const _GymManagerMemberActions({
+    required this.gymId,
+    required this.memberUserId,
+    required this.memberName,
+  });
+
+  final String gymId;
+  final String memberUserId;
+  final String memberName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final managedGyms = ref.watch(managedGymsProvider).valueOrNull ?? [];
+    final canManage = managedGyms.any((gym) => gym.id == gymId);
+    if (!canManage) return const SizedBox.shrink();
+
+    final memberships =
+        ref.watch(gymMembershipsForGymProvider(gymId)).valueOrNull ?? [];
+    GymMembershipModel? membership;
+    for (final m in memberships) {
+      if (m.userId == memberUserId &&
+          m.membershipType == GymMembershipType.athlete &&
+          m.status == GymMembershipStatus.approved) {
+        membership = m;
+        break;
+      }
+    }
+    if (membership == null) return const SizedBox.shrink();
+
+    final approvedMembership = membership;
+    final gym = managedGyms.firstWhere((g) => g.id == gymId);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Divider(color: AppColors.divider),
+          const SizedBox(height: 24),
+          Text(
+            'Gym membership',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppColors.inkMuted,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          ProofButton(
+            label: 'Remove from ${gym.name}',
+            isOutlined: true,
+            onPressed: () async {
+              await confirmRemoveGymMembership(
+                context,
+                ref,
+                membership: approvedMembership,
+                personName: memberName,
+                gymName: gym.name,
+              );
+              if (context.mounted) context.pop();
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 
