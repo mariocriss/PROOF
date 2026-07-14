@@ -50,6 +50,13 @@ enum GymMembershipStatus {
       };
 
   bool get isActive => this == GymMembershipStatus.approved;
+
+  /// Membership ended but the user may submit a new request to the gym.
+  bool get canReRequestMembership {
+    return this == GymMembershipStatus.removed ||
+        this == GymMembershipStatus.rejected ||
+        this == GymMembershipStatus.suspended;
+  }
 }
 
 enum GymMembershipRequestResult {

@@ -89,6 +89,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authUser = ref.watch(authStateProvider).valueOrNull;
+    final profileState = ref.watch(currentUserProvider);
+
+    if (authUser != null &&
+        (profileState.isLoading || profileState.valueOrNull == null)) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(

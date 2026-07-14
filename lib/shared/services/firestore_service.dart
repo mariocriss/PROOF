@@ -857,9 +857,22 @@ class FirestoreService {
     final user = await getUser(userId);
     if (user == null || user.onboardingCompleted) return;
 
-    final userDoc = await _userRef(userId).get();
-    final data = userDoc.data();
-    if (data == null || data.containsKey('onboardingCompleted')) return;
+    final hasIdentityFlag = user.hasIdentity;
+    final identity = hasIdentityFlag ? await getIdentity(userId) : null;
+    final coachProfile = await getCoachProfile(userId);
+    final hasManagedGym = user.managedGymIds.isNotEmpty;
+
+    if (identity != null ||
+        coachProfile != null ||
+        hasManagedGym ||
+        hasIdentityFlag) {
+      await updateOnboardingProgress(
+        userId: userId,
+        onboardingCompleted: true,
+        onboardingStep: OnboardingStep.completed,
+      );
+      return;
+    }
 
     final skillsSnap = await _skillsRef(userId).limit(1).get();
     final proofsSnap = await _proofsRef(userId).limit(1).get();

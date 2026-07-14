@@ -375,28 +375,52 @@ class _GymCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(description, style: Theme.of(context).textTheme.bodyMedium),
           ],
-          if (athleteStatus != null) ...[
+          if (athleteStatus != null && !athleteStatus!.canReRequestMembership) ...[
             const SizedBox(height: 12),
             _StatusChip(status: athleteStatus!, prefix: 'Athlete'),
           ],
-          if (coachStatus != null) ...[
+          if (athleteStatus != null && athleteStatus!.canReRequestMembership) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Athlete membership ended. You can request to join this gym again.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.inkMuted,
+                    height: 1.4,
+                  ),
+            ),
+          ],
+          if (coachStatus != null && !coachStatus!.canReRequestMembership) ...[
             const SizedBox(height: 8),
             _StatusChip(status: coachStatus!, prefix: 'Coach'),
+          ],
+          if (coachStatus != null && coachStatus!.canReRequestMembership) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Coach membership ended. You can request to coach here again.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.inkMuted,
+                    height: 1.4,
+                  ),
+            ),
           ],
           const SizedBox(height: 16),
           if (onManage != null)
             ProofButton(label: 'Manage gym', onPressed: onManage!)
           else ...[
-            if (athleteStatus == null && onRequestAthlete != null)
+            if (_canRequestMembership(athleteStatus) && onRequestAthlete != null)
               ProofButton(
-                label: 'Request athlete membership',
+                label: athleteStatus?.canReRequestMembership == true
+                    ? 'Request athlete membership again'
+                    : 'Request athlete membership',
                 isOutlined: true,
                 onPressed: onRequestAthlete,
               ),
-            if (coachStatus == null && onRequestCoach != null) ...[
+            if (_canRequestMembership(coachStatus) && onRequestCoach != null) ...[
               const SizedBox(height: 8),
               ProofButton(
-                label: 'Request to coach here',
+                label: coachStatus?.canReRequestMembership == true
+                    ? 'Request to coach here again'
+                    : 'Request to coach here',
                 isOutlined: true,
                 onPressed: onRequestCoach,
               ),
@@ -406,6 +430,10 @@ class _GymCard extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _canRequestMembership(GymMembershipStatus? status) {
+  return status == null || status.canReRequestMembership;
 }
 
 class _StatusChip extends StatelessWidget {

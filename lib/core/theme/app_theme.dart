@@ -145,6 +145,11 @@ class AppTheme {
         fontWeight: FontWeight.w600,
         color: AppColors.ink,
       ),
+      titleSmall: GoogleFonts.inter(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: AppColors.ink,
+      ),
       bodyLarge: GoogleFonts.inter(
         fontSize: 16,
         fontWeight: FontWeight.w400,
@@ -156,6 +161,12 @@ class AppTheme {
         fontWeight: FontWeight.w400,
         color: AppColors.inkSecondary,
         height: 1.5,
+      ),
+      bodySmall: GoogleFonts.inter(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: AppColors.inkMuted,
+        height: 1.4,
       ),
       labelLarge: GoogleFonts.inter(
         fontSize: 13,

@@ -82,6 +82,14 @@ service cloud.firestore {
         && request.resource.data.membershipType in ['athlete', 'coach'];
     }
 
+    function isReMembershipRequest() {
+      return request.auth != null
+        && ownsMembershipDoc(membershipId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && resource.data.status in ['removed', 'rejected', 'suspended'];
+    }
+
     function isManagerBootstrap() {
       return request.auth != null
         && request.resource.data.userId == request.auth.uid
@@ -206,6 +214,7 @@ service cloud.firestore {
         || (ownsMembershipDoc(membershipId)
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.status == 'removed')
+        || isReMembershipRequest()
         || (ownsMembershipDoc(membershipId) && isPendingMembershipRequest())
       );
       allow delete: if ownsMembershipDoc(membershipId);

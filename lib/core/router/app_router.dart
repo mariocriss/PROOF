@@ -73,16 +73,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (userState.isLoading) return null;
 
         final userModel = userState.valueOrNull;
-        final onboardingComplete = userModel?.onboardingCompleted ?? false;
-        final managedGymId = userModel?.managedGymIds.firstOrNull;
+        // Profile still loading after auth (e.g. right after sign-in).
+        if (userModel == null) return null;
+
+        final onboardingComplete = userModel.onboardingCompleted;
+        final managedGymId = userModel.managedGymIds.firstOrNull;
 
         if (!onboardingComplete) {
           if (isGymManagerRoute && managedGymId != null) return null;
 
           final target = OnboardingPaths.routeForUser(
-            step: userModel?.onboardingStep ?? OnboardingStep.chooseAccountType,
+            step: userModel.onboardingStep,
             onboardingCompleted: false,
-            role: userModel?.accountType,
+            role: userModel.accountType,
             managedGymId: managedGymId,
           );
 
@@ -96,7 +99,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             return OnboardingPaths.routeForUser(
               step: OnboardingStep.completed,
               onboardingCompleted: true,
-              role: userModel?.accountType,
+              role: userModel.accountType,
               managedGymId: managedGymId,
             );
           }
@@ -303,7 +306,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: ':handle',
             builder: (context, state) {
               final handle = state.pathParameters['handle']!;
-              return CoachProfileScreen(handle: handle);
+              return CoachProfileScreen(
+                handle: handle,
+                gymId: state.uri.queryParameters['gymId'],
+              );
             },
           ),
         ],
@@ -414,6 +420,13 @@ final routerProvider = Provider<GoRouter>((ref) {
     }
   });
   ref.listen(currentUserProvider, (previous, next) {
+    final previousId = previous?.valueOrNull?.id;
+    final nextId = next.valueOrNull?.id;
+    if (previousId != nextId) {
+      router.refresh();
+      return;
+    }
+
     final wasComplete = previous?.valueOrNull?.onboardingCompleted;
     final isComplete = next.valueOrNull?.onboardingCompleted;
     if (wasComplete != isComplete) {

@@ -120,6 +120,43 @@ class _SkeletonBox extends StatelessWidget {
   }
 }
 
+class GymOverviewStat extends StatelessWidget {
+  const GymOverviewStat({
+    super.key,
+    required this.count,
+    required this.label,
+  });
+
+  final int count;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.inkMuted,
+                  height: 1.3,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class GymStatTile extends StatelessWidget {
   const GymStatTile({
     super.key,

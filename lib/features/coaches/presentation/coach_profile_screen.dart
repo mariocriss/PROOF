@@ -2,22 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
+import 'package:proof/shared/models/gym_membership_model.dart';
 import 'package:proof/shared/models/relationship_model.dart';
 import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/gym_providers.dart';
 import 'package:proof/shared/providers/people_providers.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
 
 class CoachProfileScreen extends ConsumerWidget {
-  const CoachProfileScreen({super.key, required this.handle});
+  const CoachProfileScreen({
+    super.key,
+    required this.handle,
+    this.gymId,
+  });
 
   final String handle;
+  final String? gymId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final identityAsync = ref.watch(identityByHandleProvider(handle));
     final userId = ref.watch(authStateProvider).valueOrNull?.uid;
     final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+    final managedGyms = ref.watch(managedGymsProvider).valueOrNull ?? [];
+    final gymMemberships = gymId != null
+        ? ref.watch(gymMembershipsForGymProvider(gymId!)).valueOrNull ?? []
+        : const <GymMembershipModel>[];
 
     return identityAsync.when(
       loading: () => const Scaffold(
@@ -51,6 +62,21 @@ class CoachProfileScreen extends ConsumerWidget {
             existing.any((r) => r.status == RelationshipStatus.accepted);
         final isPending =
             existing.any((r) => r.status == RelationshipStatus.pending);
+
+        final approvedGymMembership = _approvedGymMembership(
+          coachUserId: identity.userId,
+          gymId: gymId,
+          gymMemberships: gymMemberships,
+        );
+        final isApprovedAtManagedGym = approvedGymMembership != null &&
+            managedGyms.any((g) => g.id == approvedGymMembership.gymId);
+        final approvedGymName = approvedGymMembership != null
+            ? managedGyms
+                    .where((g) => g.id == approvedGymMembership.gymId)
+                    .firstOrNull
+                    ?.name ??
+                'your gym'
+            : null;
 
         final topSkills = _topVerifiedSkills(
           ref.watch(coachVerifiedProofsProvider(identity.userId)).valueOrNull ??
@@ -180,6 +206,11 @@ class CoachProfileScreen extends ConsumerWidget {
                   label: 'This is your profile',
                   onPressed: null,
                 )
+              else if (isApprovedAtManagedGym)
+                ProofButton(
+                  label: 'Approved Coach at $approvedGymName',
+                  onPressed: null,
+                )
               else if (isConnected)
                 ProofButton(
                   label: 'Connected Coach',
@@ -190,7 +221,7 @@ class CoachProfileScreen extends ConsumerWidget {
                   label: 'Request Pending',
                   onPressed: null,
                 )
-              else
+              else if (user?.hasIdentity == true)
                 ProofButton(
                   label: 'Request Coach',
                   onPressed: () async {
@@ -210,6 +241,23 @@ class CoachProfileScreen extends ConsumerWidget {
         );
       },
     );
+  }
+
+  GymMembershipModel? _approvedGymMembership({
+    required String coachUserId,
+    required String? gymId,
+    required List<GymMembershipModel> gymMemberships,
+  }) {
+    if (gymId == null) return null;
+
+    for (final membership in gymMemberships) {
+      if (membership.userId == coachUserId &&
+          membership.membershipType == GymMembershipType.coach &&
+          membership.status == GymMembershipStatus.approved) {
+        return membership;
+      }
+    }
+    return null;
   }
 
   List<String> _topVerifiedSkills(

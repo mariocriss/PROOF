@@ -26,9 +26,24 @@ final gymProvider = FutureProvider.family<GymModel?, String>((ref, gymId) {
 });
 
 final gymMembershipsForGymProvider =
-    StreamProvider.family<List<GymMembershipModel>, String>((ref, gymId) {
-  return ref.watch(firestoreServiceProvider).watchGymMemberships(gymId: gymId);
-});
+    StreamProvider.autoDispose.family<List<GymMembershipModel>, String>(
+  (ref, gymId) {
+    final authState = ref.watch(authStateProvider);
+
+    if (authState.isLoading) {
+      return const Stream<List<GymMembershipModel>>.empty();
+    }
+
+    final user = authState.valueOrNull;
+    if (user == null) {
+      return Stream.value(const <GymMembershipModel>[]);
+    }
+
+    return Stream.fromFuture(user.getIdToken()).asyncExpand(
+      (_) => ref.read(firestoreServiceProvider).watchGymMemberships(gymId: gymId),
+    );
+  },
+);
 
 class GymCoachOption {
   const GymCoachOption({

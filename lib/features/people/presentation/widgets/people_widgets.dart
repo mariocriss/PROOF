@@ -101,6 +101,7 @@ class MoreMenuRow extends StatelessWidget {
                       title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
+                            color: AppColors.ink,
                           ),
                     ),
                     const SizedBox(height: 2),
