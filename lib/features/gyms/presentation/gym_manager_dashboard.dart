@@ -738,12 +738,6 @@ class _MoreTab extends ConsumerWidget {
             MoreMenuCard(
               children: [
                 MoreMenuRow(
-                  icon: Icons.edit_outlined,
-                  title: 'Edit Gym Profile',
-                  subtitle: 'Update name, logo, and contact details',
-                  onTap: onEditProfile,
-                ),
-                MoreMenuRow(
                   icon: Icons.apartment_outlined,
                   title: 'Gym Details',
                   subtitle: '@${data.gym.handle} · ${data.locationLabel.isEmpty ? 'Add location' : data.locationLabel}',
