@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/legal_constants.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/auth/presentation/reauth_dialog.dart';
-import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/widgets/legal_link.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
@@ -17,14 +16,32 @@ class AccountScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends ConsumerState<AccountScreen> {
+class _AccountScreenState extends ConsumerState<AccountScreen>
+    with WidgetsBindingObserver {
   final _specialtyController = TextEditingController();
   bool _isCoach = false;
   bool _loaded = false;
   bool _deleteInFlight = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshVerification();
+  }
+
+  Future<void> _refreshVerification() async {
+    await ref.read(authServiceProvider).reloadCurrentUser();
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _specialtyController.dispose();
     super.dispose();
   }
@@ -33,9 +50,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     try {
       await ref.read(authServiceProvider).sendEmailVerification();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Verification email sent')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Verification email sent')));
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -82,10 +99,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
     setState(() => _deleteInFlight = true);
     try {
-      final result = await ref.read(accountDeletionServiceProvider).deleteAccount(
-            userId: userId,
-            password: password,
-          );
+      final result = await ref
+          .read(accountDeletionServiceProvider)
+          .deleteAccount(userId: userId, password: password);
       if (!mounted) return;
 
       if (result.isSuccess) {
@@ -139,8 +155,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           Text(
             emailVerified ? 'Email verified' : 'Email not verified',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: emailVerified ? AppColors.accent : AppColors.inkMuted,
-                ),
+              color: emailVerified ? AppColors.accent : AppColors.inkMuted,
+            ),
           ),
           if (!emailVerified) ...[
             const SizedBox(height: 12),
@@ -149,16 +165,26 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               isOutlined: true,
               onPressed: _resendVerification,
             ),
+            const SizedBox(height: 8),
+            ProofButton(
+              label: 'Refresh verification status',
+              isOutlined: true,
+              onPressed: _refreshVerification,
+            ),
           ],
           const SizedBox(height: 24),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('I am a coach'),
-            subtitle: const Text(
-              'Enable coach tools and appear in coach discovery',
+            subtitle: Text(
+              user?.role.isGymManager == true
+                  ? 'Gym manager accounts keep their gym role. Specialty only applies if you also coach.'
+                  : 'Enable coach tools and appear in coach discovery',
             ),
             value: _isCoach,
-            onChanged: (value) => setState(() => _isCoach = value),
+            onChanged: user?.role.isGymManager == true
+                ? null
+                : (value) => setState(() => _isCoach = value),
           ),
           if (_isCoach) ...[
             const SizedBox(height: 12),
@@ -174,10 +200,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             onPressed: user == null
                 ? null
                 : () async {
-                    final role = _isCoach ? UserRole.coach : UserRole.athlete;
-                    await ref.read(firestoreServiceProvider).updateUserRole(
+                    await ref
+                        .read(firestoreServiceProvider)
+                        .updateCoachPreference(
                           userId: user.id,
-                          role: role,
+                          currentRole: user.role,
+                          enableCoach: _isCoach,
                           specialty: _specialtyController.text.trim(),
                         );
                     if (context.mounted) {

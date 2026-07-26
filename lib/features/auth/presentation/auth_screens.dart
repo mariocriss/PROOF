@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,8 +12,10 @@ import 'package:proof/core/utils/validators.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/models/onboarding_step.dart';
 import 'package:proof/shared/models/user_model.dart';
+import 'package:proof/shared/services/auth_service.dart';
 import 'package:proof/shared/widgets/legal_link.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -26,11 +30,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _error;
+  Timer? _profileTimeout;
+  bool _profileTimedOut = false;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _profileTimeout?.cancel();
     super.dispose();
   }
 
@@ -42,19 +49,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     try {
-      await ref.read(authServiceProvider).signIn(
+      await ref
+          .read(authServiceProvider)
+          .signIn(
             email: _emailController.text,
             password: _passwordController.text,
           );
       final user = ref.read(authServiceProvider).currentUser;
       if (user != null) {
-        await ref.read(firestoreServiceProvider).ensureUserDocument(
+        await ref
+            .read(firestoreServiceProvider)
+            .ensureUserDocument(
               userId: user.uid,
               email: user.email ?? _emailController.text.trim(),
             );
       }
     } on FirebaseAuthException catch (e) {
-      setState(() => _error = ref.read(authServiceProvider).mapAuthError(e));
+      setState(
+        () => _error = ref
+            .read(authServiceProvider)
+            .mapAuthError(e, context: AuthErrorContext.login),
+      );
     } catch (_) {
       setState(() => _error = 'Something went wrong. Please try again.');
     } finally {
@@ -81,7 +96,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         SnackBar(content: Text('Password reset email sent to $email')),
       );
     } on FirebaseAuthException catch (e) {
-      setState(() => _error = ref.read(authServiceProvider).mapAuthError(e));
+      setState(
+        () => _error = ref
+            .read(authServiceProvider)
+            .mapAuthError(e, context: AuthErrorContext.passwordReset),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -92,11 +111,60 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authUser = ref.watch(authStateProvider).valueOrNull;
     final profileState = ref.watch(currentUserProvider);
 
+    final needsProfile =
+        authUser != null &&
+        (profileState.isLoading || profileState.valueOrNull == null);
+    if (needsProfile && !_profileTimedOut) {
+      _profileTimeout ??= Timer(const Duration(seconds: 12), () {
+        if (mounted) setState(() => _profileTimedOut = true);
+      });
+    } else if (!needsProfile) {
+      _profileTimeout?.cancel();
+      _profileTimeout = null;
+      _profileTimedOut = false;
+    }
+
     if (authUser != null &&
-        (profileState.isLoading || profileState.valueOrNull == null)) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        (profileState.hasError || (needsProfile && _profileTimedOut))) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('We could not load your profile.'),
+                const SizedBox(height: 12),
+                ProofButton(
+                  label: 'Retry',
+                  onPressed: () {
+                    setState(() => _profileTimedOut = false);
+                    ref.invalidate(currentUserProvider);
+                  },
+                ),
+                const SizedBox(height: 8),
+                ProofButton(
+                  label: 'Sign out',
+                  isOutlined: true,
+                  onPressed: () => ref.read(authServiceProvider).signOut(),
+                ),
+                if (LegalConstants.supportEmail != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri(scheme: 'mailto', path: LegalConstants.supportEmail),
+                    ),
+                    child: const Text('Contact support'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       );
+    }
+    if (authUser != null && needsProfile) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -175,9 +243,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Text(
                   'Already started setup? Sign in to continue onboarding.',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.inkMuted,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppColors.inkMuted),
                 ),
               ],
             ),
@@ -234,14 +302,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
       final now = DateTime.now();
       try {
-        await firestore.createUser(UserModel(
-          id: credential.user!.uid,
-          email: _emailController.text.trim(),
-          createdAt: now,
-          updatedAt: now,
-          onboardingCompleted: false,
-          onboardingStep: OnboardingStep.chooseAccountType,
-        ));
+        await firestore.createUser(
+          UserModel(
+            id: credential.user!.uid,
+            email: _emailController.text.trim(),
+            createdAt: now,
+            updatedAt: now,
+            onboardingCompleted: false,
+            onboardingStep: OnboardingStep.chooseAccountType,
+          ),
+        );
       } catch (e) {
         await credential.user?.delete();
         rethrow;
@@ -251,7 +321,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         await ref.read(authServiceProvider).sendEmailVerification();
       } catch (_) {}
     } on FirebaseAuthException catch (e) {
-      setState(() => _error = e.message ?? ref.read(authServiceProvider).mapAuthError(e));
+      setState(
+        () =>
+            _error = e.message ?? ref.read(authServiceProvider).mapAuthError(e),
+      );
     } on FirebaseException catch (e) {
       setState(() {
         _error = e.code == 'permission-denied'
@@ -273,7 +346,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(leading: BackButton(onPressed: () => context.go('/login'))),
+      appBar: AppBar(
+        leading: BackButton(onPressed: () => context.go('/login')),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -299,7 +374,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       color: AppColors.error.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(_error!, style: const TextStyle(color: AppColors.error)),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(color: AppColors.error),
+                    ),
                   ),
                   if (_error!.contains('already registered')) ...[
                     const SizedBox(height: 12),

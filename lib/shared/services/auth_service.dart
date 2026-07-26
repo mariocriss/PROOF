@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+enum AuthErrorContext { login, passwordReset, defaultAction }
+
 class AuthService {
   AuthService(this._auth);
 
@@ -74,12 +76,20 @@ class AuthService {
     await user.delete();
   }
 
-  String? mapAuthError(FirebaseAuthException e) {
+  String? mapAuthError(
+    FirebaseAuthException e, {
+    AuthErrorContext context = AuthErrorContext.defaultAction,
+  }) {
     switch (e.code) {
       case 'user-not-found':
+        return context == AuthErrorContext.passwordReset
+            ? 'No account found for that email'
+            : 'Invalid email or password';
       case 'wrong-password':
       case 'invalid-credential':
         return 'Invalid email or password';
+      case 'network-request-failed':
+        return 'Network connection failed. Check your connection and try again.';
       case 'email-already-in-use':
         return e.message ??
             'This email is already registered. Sign in to continue onboarding, or use a different email.';

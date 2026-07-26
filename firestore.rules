@@ -138,7 +138,7 @@ service cloud.firestore {
         && request.resource.data.membershipType in ['athlete', 'coach'];
     }
 
-    function isReMembershipRequest() {
+    function isReMembershipRequest(membershipId) {
       return request.auth != null
         && ownsMembershipDoc(membershipId)
         && request.resource.data.userId == request.auth.uid
@@ -146,13 +146,17 @@ service cloud.firestore {
         && resource.data.status in ['removed', 'rejected', 'suspended'];
     }
 
-    function isManagerBootstrap() {
+    function isManagerBootstrap(membershipId) {
       return request.auth != null
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.membershipType == 'manager'
         && request.resource.data.status == 'approved'
         && request.resource.data.gymId is string
-        && request.resource.data.gymId.size() > 0;
+        && request.resource.data.gymId.size() > 0
+        && membershipId == membershipDocId(
+          request.resource.data.gymId, request.auth.uid, 'manager'
+        )
+        && isGymCreator(request.resource.data.gymId);
     }
 
     function isRelationshipParticipant() {
@@ -168,6 +172,66 @@ service cloud.firestore {
       return request.resource.data.fromUserId == resource.data.fromUserId
         && request.resource.data.toUserId == resource.data.toUserId
         && request.resource.data.type == resource.data.type;
+    }
+
+    function allowedFriendTransition() {
+      return relationshipCoreFieldsImmutable()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'respondedAt', 'requesterSeen', 'recipientSeen',
+          'blockedByUserId'
+        ])
+        && (
+          (resource.data.status == 'pending'
+            && ((resource.data.toUserId == request.auth.uid
+                && request.resource.data.status in ['accepted', 'declined'])
+              || (resource.data.fromUserId == request.auth.uid
+                && request.resource.data.status == 'declined')
+              || (request.resource.data.status == 'blocked'
+                && request.resource.data.blockedByUserId == request.auth.uid)))
+          || (resource.data.status == 'accepted'
+            && request.resource.data.status == 'blocked'
+            && request.resource.data.blockedByUserId == request.auth.uid)
+          || (resource.data.status == 'blocked'
+            && resource.data.blockedByUserId == request.auth.uid
+            && request.resource.data.status == 'declined')
+        );
+    }
+
+    function managerCancelsPendingVerification() {
+      return canManageGym(resource.data.gymId)
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedAt', 'reviewedBy']);
+    }
+
+    function managerRevertsPendingProof() {
+      return resource.data.verificationStatus == 'pending_verification'
+        && request.resource.data.verificationStatus == 'self_reported'
+        && resource.data.verificationGymId is string
+        && canManageGym(resource.data.verificationGymId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'verificationStatus',
+            'proofSource',
+            'verifiedAt',
+            'verifiedByCoachId',
+            'coachId',
+            'requestedCoachId'
+          ]);
+    }
+
+    function isAllowedRoleChange() {
+      return request.resource.data.accountType == resource.data.accountType
+        && request.resource.data.managedGymIds == resource.data.managedGymIds
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role', 'specialty', 'updatedAt'])
+        && (
+          (resource.data.role == 'athlete'
+            && request.resource.data.role == 'athlete_and_coach')
+          || (resource.data.role == 'athlete_and_coach'
+            && request.resource.data.role == 'athlete')
+        );
     }
 
     function friendDocId(userA, userB) {
@@ -186,7 +250,14 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow create: if request.auth != null && request.auth.uid == userId;
-      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId && (
+        (request.resource.data.role == resource.data.role
+          && request.resource.data.managedGymIds == resource.data.managedGymIds
+          && request.resource.data.accountType == resource.data.accountType)
+        || resource.data.onboardingCompleted != true
+        || isAllowedRoleChange()
+      );
+      allow delete: if request.auth != null && request.auth.uid == userId;
 
       match /identity/{docId} {
         allow read: if isPublicIdentity(userId)
@@ -212,6 +283,7 @@ service cloud.firestore {
           || (resource.data.coachId == request.auth.uid
             && request.resource.data.coachId == request.auth.uid)
           || coachAnonymizesAssignedProof()
+          || managerRevertsPendingProof()
         );
         allow delete: if request.auth != null && request.auth.uid == userId;
       }
@@ -263,14 +335,14 @@ service cloud.firestore {
       allow read: if canReadGymMembership(membershipId);
       allow create: if request.auth != null && (
         (ownsMembershipDoc(membershipId) && isPendingMembershipRequest())
-        || (ownsMembershipDoc(membershipId) && isManagerBootstrap())
+        || (ownsMembershipDoc(membershipId) && isManagerBootstrap(membershipId))
       );
       allow update: if request.auth != null && (
         (resource.data.gymId is string && canManageGym(resource.data.gymId))
         || (ownsMembershipDoc(membershipId)
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.status == 'removed')
-        || isReMembershipRequest()
+        || isReMembershipRequest(membershipId)
         || (ownsMembershipDoc(membershipId) && isPendingMembershipRequest())
       );
       // Own membership, or gym creator closing the gym during account deletion.
@@ -297,16 +369,21 @@ service cloud.firestore {
           || (request.resource.data.type == 'coach'
             && request.resource.data.status == 'pending')
           || (request.resource.data.type == 'friend'
-            && request.resource.data.status == 'blocked')
+            && request.resource.data.status == 'blocked'
+            && request.resource.data.blockedByUserId == request.auth.uid)
         );
       allow update: if request.auth != null
         && isRelationshipParticipant()
-        && relationshipCoreFieldsImmutable();
+        && (
+          (resource.data.type == 'friend' && allowedFriendTransition())
+          || (resource.data.type != 'friend' && relationshipCoreFieldsImmutable())
+        );
       allow delete: if request.auth != null && (
-        resource.data.fromUserId == request.auth.uid
-        || resource.data.toUserId == request.auth.uid
-        || resource.data.requesterUserId == request.auth.uid
-        || resource.data.recipientUserId == request.auth.uid
+        (resource.data.status == 'blocked'
+          && resource.data.blockedByUserId == request.auth.uid)
+        || (resource.data.status == 'pending'
+          && resource.data.fromUserId == request.auth.uid)
+        || (resource.data.status == 'accepted' && isRelationshipParticipant())
       );
     }
 
@@ -338,6 +415,7 @@ service cloud.firestore {
           && isApprovedCoachAtGym(resource.data.gymId)
         )
         || athleteMarksVerificationStackResynced()
+        || managerCancelsPendingVerification()
       );
       // Account deletion: athlete or assigned coach may remove their requests.
       allow delete: if request.auth != null && (

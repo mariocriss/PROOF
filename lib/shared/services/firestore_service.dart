@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:proof/core/constants/firestore_paths.dart';
 import 'package:proof/core/utils/gym_verification_validator.dart';
+import 'package:proof/core/utils/onboarding_migration.dart';
 import 'package:proof/core/utils/proof_stack_calculator.dart';
 import 'package:proof/core/utils/result_normalizer.dart';
 import 'package:proof/core/utils/skill_badge_evaluator.dart';
@@ -46,9 +47,9 @@ class FirestoreService {
       _users.doc(userId);
 
   DocumentReference<Map<String, dynamic>> _identityRef(String userId) =>
-      _userRef(userId)
-          .collection(FirestorePaths.identity)
-          .doc(FirestorePaths.profile);
+      _userRef(
+        userId,
+      ).collection(FirestorePaths.identity).doc(FirestorePaths.profile);
 
   CollectionReference<Map<String, dynamic>> _skillsRef(String userId) =>
       _userRef(userId).collection(FirestorePaths.skills);
@@ -133,9 +134,7 @@ class FirestoreService {
     }
 
     // Close gyms this user created (memberships → handle → gym).
-    final ownedGymIds = <String>{
-      if (user != null) ...user.managedGymIds,
-    };
+    final ownedGymIds = <String>{if (user != null) ...user.managedGymIds};
     // Also discover owned gyms via memberships in case managedGymIds is stale.
     for (final membership in memberships) {
       ownedGymIds.add(membership.gymId);
@@ -174,8 +173,7 @@ class FirestoreService {
   }
 
   Future<List<GymMembershipModel>> getMembershipsForGym(String gymId) async {
-    final snap =
-        await _gymMemberships.where('gymId', isEqualTo: gymId).get();
+    final snap = await _gymMemberships.where('gymId', isEqualTo: gymId).get();
     return snap.docs.map(GymMembershipModel.fromFirestore).toList();
   }
 
@@ -183,8 +181,7 @@ class FirestoreService {
     final from = await _relationships
         .where('fromUserId', isEqualTo: userId)
         .get();
-    final to =
-        await _relationships.where('toUserId', isEqualTo: userId).get();
+    final to = await _relationships.where('toUserId', isEqualTo: userId).get();
 
     final ids = <String>{
       ...from.docs.map((doc) => doc.id),
@@ -280,7 +277,9 @@ class FirestoreService {
     }
 
     final id = _userReports.doc().id;
-    await _userReports.doc(id).set(
+    await _userReports
+        .doc(id)
+        .set(
           UserReportModel(
             id: id,
             reporterUserId: reporterUserId,
@@ -309,17 +308,17 @@ class FirestoreService {
   }
 
   /// Creates the user doc if missing (e.g. account existed before Firestore write).
-  Future<void> ensureUserDocument({required String userId, required String email}) async {
+  Future<void> ensureUserDocument({
+    required String userId,
+    required String email,
+  }) async {
     final doc = await _userRef(userId).get();
     if (doc.exists) return;
 
     final now = DateTime.now();
-    await createUser(UserModel(
-      id: userId,
-      email: email,
-      createdAt: now,
-      updatedAt: now,
-    ));
+    await createUser(
+      UserModel(id: userId, email: email, createdAt: now, updatedAt: now),
+    );
   }
 
   Stream<UserModel?> watchUser(String userId) {
@@ -336,10 +335,9 @@ class FirestoreService {
   }
 
   Future<void> markHasIdentity(String userId) async {
-    await _userRef(userId).update({
-      'hasIdentity': true,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    await _userRef(
+      userId,
+    ).update({'hasIdentity': true, 'updatedAt': FieldValue.serverTimestamp()});
   }
 
   // ── Physical Identity ─────────────────────────────────────────────────────
@@ -362,15 +360,11 @@ class FirestoreService {
     batch.set(_identityRef(identity.userId), identity.toFirestore());
     batch.set(_handles.doc(handle), {'userId': identity.userId});
     // Use set+merge so this works even if the user doc was never created.
-    batch.set(
-      _userRef(identity.userId),
-      {
-        'hasIdentity': true,
-        'onboardingCompleted': false,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    batch.set(_userRef(identity.userId), {
+      'hasIdentity': true,
+      'onboardingCompleted': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
     await batch.commit();
     await syncPublicProfile(identity.userId);
@@ -473,34 +467,37 @@ class FirestoreService {
     final version = await _skillMergeVersion(userId);
     if (version >= skillMergeVersion) return;
 
-    var skills =
-        (await _skillsRef(userId).get()).docs.map(SkillModel.fromFirestore).toList();
-    var proofs =
-        (await _proofsRef(userId).get()).docs.map(ProofModel.fromFirestore).toList();
+    var skills = (await _skillsRef(
+      userId,
+    ).get()).docs.map(SkillModel.fromFirestore).toList();
+    var proofs = (await _proofsRef(
+      userId,
+    ).get()).docs.map(ProofModel.fromFirestore).toList();
 
     proofs = await _mergeDuplicateSkillGroups(userId, skills, proofs);
 
-    skills =
-        (await _skillsRef(userId).get()).docs.map(SkillModel.fromFirestore).toList();
-    proofs =
-        (await _proofsRef(userId).get()).docs.map(ProofModel.fromFirestore).toList();
+    skills = (await _skillsRef(
+      userId,
+    ).get()).docs.map(SkillModel.fromFirestore).toList();
+    proofs = (await _proofsRef(
+      userId,
+    ).get()).docs.map(ProofModel.fromFirestore).toList();
 
     await _reassignProofsFromArchivedDuplicates(userId, skills, proofs);
 
-    skills =
-        (await _skillsRef(userId).get()).docs.map(SkillModel.fromFirestore).toList();
-    proofs =
-        (await _proofsRef(userId).get()).docs.map(ProofModel.fromFirestore).toList();
+    skills = (await _skillsRef(
+      userId,
+    ).get()).docs.map(SkillModel.fromFirestore).toList();
+    proofs = (await _proofsRef(
+      userId,
+    ).get()).docs.map(ProofModel.fromFirestore).toList();
 
     await _recalculateActiveSkillStacks(skills, proofs);
 
-    await _userRef(userId).set(
-      {
-        'skillMergeVersion': skillMergeVersion,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _userRef(userId).set({
+      'skillMergeVersion': skillMergeVersion,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<List<ProofModel>> _mergeDuplicateSkillGroups(
@@ -514,9 +511,12 @@ class FirestoreService {
       final primary = ProofStackMerge.pickPrimarySkill(group, updatedProofs);
 
       for (final duplicate in group.where((s) => s.id != primary.id)) {
-        for (final proof
-            in updatedProofs.where((p) => p.skillId == duplicate.id)) {
-          await _proofsRef(userId).doc(proof.id).update({'skillId': primary.id});
+        for (final proof in updatedProofs.where(
+          (p) => p.skillId == duplicate.id,
+        )) {
+          await _proofsRef(
+            userId,
+          ).doc(proof.id).update({'skillId': primary.id});
         }
         await updateSkillStatus(
           userId: userId,
@@ -527,7 +527,8 @@ class FirestoreService {
 
       updatedProofs = updatedProofs
           .map(
-            (proof) => group.any((s) => s.id == proof.skillId && s.id != primary.id)
+            (proof) =>
+                group.any((s) => s.id == proof.skillId && s.id != primary.id)
                 ? ProofModel(
                     id: proof.id,
                     userId: proof.userId,
@@ -549,8 +550,9 @@ class FirestoreService {
           )
           .toList();
 
-      final primaryProofs =
-          updatedProofs.where((p) => p.skillId == primary.id).toList();
+      final primaryProofs = updatedProofs
+          .where((p) => p.skillId == primary.id)
+          .toList();
       await _syncSkillEvidence(primary, primaryProofs);
     }
 
@@ -568,9 +570,9 @@ class FirestoreService {
     );
 
     for (final item in reassignments) {
-      await _proofsRef(userId)
-          .doc(item.proof.id)
-          .update({'skillId': item.primary.id});
+      await _proofsRef(
+        userId,
+      ).doc(item.proof.id).update({'skillId': item.primary.id});
     }
   }
 
@@ -578,15 +580,17 @@ class FirestoreService {
     List<SkillModel> skills,
     List<ProofModel> proofs,
   ) async {
-    final activeSkills =
-        skills.where((s) => s.status == SkillStatus.active).toList();
+    final activeSkills = skills
+        .where((s) => s.status == SkillStatus.active)
+        .toList();
     final groups = SkillStackReconciler.groupNonArchived(activeSkills);
 
     for (final group in groups.values) {
       final primary = ProofStackMerge.pickPrimarySkill(group, proofs);
       final skillIds = group.map((s) => s.id).toSet();
-      final stackProofs =
-          proofs.where((p) => skillIds.contains(p.skillId)).toList();
+      final stackProofs = proofs
+          .where((p) => skillIds.contains(p.skillId))
+          .toList();
       await _syncSkillEvidence(primary, stackProofs);
     }
   }
@@ -650,10 +654,9 @@ class FirestoreService {
       return;
     }
 
-    await _skillsRef(userId).doc(skillId).update({
-      'targetValue': trimmed,
-      'targetUnit': targetUnit,
-    });
+    await _skillsRef(
+      userId,
+    ).doc(skillId).update({'targetValue': trimmed, 'targetUnit': targetUnit});
   }
 
   Future<void> updateSkillStatus({
@@ -693,7 +696,9 @@ class FirestoreService {
     if (skill == null) return;
 
     final storedProof = _attachSkillVariant(proof, skill);
-    await _proofsRef(proof.userId).doc(storedProof.id).set(storedProof.toFirestore());
+    await _proofsRef(
+      proof.userId,
+    ).doc(storedProof.id).set(storedProof.toFirestore());
 
     final allProofsSnap = await _proofsRef(proof.userId).get();
     final allProofs = allProofsSnap.docs.map(ProofModel.fromFirestore).toList();
@@ -706,12 +711,12 @@ class FirestoreService {
     final priorStackProofs = stack.proofs
         .where((p) => p.id != storedProof.id)
         .toList();
-    final previousConfidence =
-        ProofStackCalculator.calculate(priorStackProofs);
+    final previousConfidence = ProofStackCalculator.calculate(priorStackProofs);
     final newConfidence = ProofStackCalculator.calculate(stack.proofs);
 
     final priorBest = _bestNormalizedValue(skill, priorStackProofs);
-    final isPersonalBest = storedProof.normalizedValue != null &&
+    final isPersonalBest =
+        storedProof.normalizedValue != null &&
         BestResultLogic.isBetter(
           candidate: storedProof.normalizedValue!,
           current: priorBest,
@@ -719,15 +724,16 @@ class FirestoreService {
         ) &&
         priorStackProofs.isNotEmpty;
 
-    final hadGoalReachedBadge = stack.primary.earnedBadgeIds
-        .contains(SkillBadgeId.goalReached.value);
+    final hadGoalReachedBadge = stack.primary.earnedBadgeIds.contains(
+      SkillBadgeId.goalReached.value,
+    );
 
     await _syncSkillEvidence(stack.primary, stack.proofs);
 
     final updatedSkill =
         await getSkill(proof.userId, stack.primary.id) ?? stack.primary;
-    final personalBestCount = updatedSkill.personalBestCount +
-        (isPersonalBest ? 1 : 0);
+    final personalBestCount =
+        updatedSkill.personalBestCount + (isPersonalBest ? 1 : 0);
     final skillForBadges = updatedSkill.copyWith(
       personalBestCount: personalBestCount,
     );
@@ -882,7 +888,9 @@ class FirestoreService {
     );
     final primary = ProofStackMerge.pickPrimarySkill(siblings, proofs);
     final skillIds = siblings.map((s) => s.id).toSet();
-    final stackProofs = proofs.where((p) => skillIds.contains(p.skillId)).toList();
+    final stackProofs = proofs
+        .where((p) => skillIds.contains(p.skillId))
+        .toList();
 
     return _SkillStackContext(primary: primary, proofs: stackProofs);
   }
@@ -938,31 +946,17 @@ class FirestoreService {
     final user = await getUser(userId);
     if (user == null || user.onboardingCompleted) return;
 
-    final hasIdentityFlag = user.hasIdentity;
-    final identity = hasIdentityFlag ? await getIdentity(userId) : null;
+    final identity = await getIdentity(userId);
     final coachProfile = await getCoachProfile(userId);
-    final hasManagedGym = user.managedGymIds.isNotEmpty;
-
-    if (identity != null ||
-        coachProfile != null ||
-        hasManagedGym ||
-        hasIdentityFlag) {
-      await updateOnboardingProgress(
-        userId: userId,
-        onboardingCompleted: true,
-        onboardingStep: OnboardingStep.completed,
-      );
-      return;
-    }
-
-    final skillsSnap = await _skillsRef(userId).limit(1).get();
-    final proofsSnap = await _proofsRef(userId).limit(1).get();
-    if (skillsSnap.docs.isEmpty && proofsSnap.docs.isEmpty) return;
-
+    final nextStep = OnboardingMigration.resolveNext(
+      user,
+      hasIdentity: identity != null,
+      hasCoachProfile: coachProfile != null,
+    );
     await updateOnboardingProgress(
       userId: userId,
-      onboardingCompleted: true,
-      onboardingStep: OnboardingStep.completed,
+      onboardingCompleted: nextStep == OnboardingStep.completed,
+      onboardingStep: nextStep,
     );
   }
 
@@ -989,13 +983,10 @@ class FirestoreService {
     await _clearTimeline(userId);
     await _writeTimelineEvents(userId, rebuilt);
 
-    await _userRef(userId).set(
-      {
-        'timelineMigrationVersion': timelineMigrationVersion,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _userRef(userId).set({
+      'timelineMigrationVersion': timelineMigrationVersion,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<int> _timelineMigrationVersion(String userId) async {
@@ -1126,14 +1117,15 @@ class FirestoreService {
       }
     }
 
-    return results.values.toList()
-      ..sort((a, b) {
-        final aHandle =
-            a.handleLowercase.isNotEmpty ? a.handleLowercase : a.handle.toLowerCase();
-        final bHandle =
-            b.handleLowercase.isNotEmpty ? b.handleLowercase : b.handle.toLowerCase();
-        return aHandle.compareTo(bHandle);
-      });
+    return results.values.toList()..sort((a, b) {
+      final aHandle = a.handleLowercase.isNotEmpty
+          ? a.handleLowercase
+          : a.handle.toLowerCase();
+      final bHandle = b.handleLowercase.isNotEmpty
+          ? b.handleLowercase
+          : b.handle.toLowerCase();
+      return aHandle.compareTo(bHandle);
+    });
   }
 
   Future<PublicProfileModel?> lookupPublicProfileByHandle(String handle) async {
@@ -1147,15 +1139,16 @@ class FirestoreService {
 
     if (identity != null && identity.isPublic) {
       final skillsSnap = await _skillsRef(userId).get();
-      final skills = skillsSnap.docs
-          .map(SkillModel.fromFirestore)
-          .where((s) => s.status == SkillStatus.active)
-          .toList()
-        ..sort((a, b) {
-          final aConf = a.stackConfidence?.value ?? '';
-          final bConf = b.stackConfidence?.value ?? '';
-          return bConf.compareTo(aConf);
-        });
+      final skills =
+          skillsSnap.docs
+              .map(SkillModel.fromFirestore)
+              .where((s) => s.status == SkillStatus.active)
+              .toList()
+            ..sort((a, b) {
+              final aConf = a.stackConfidence?.value ?? '';
+              final bConf = b.stackConfidence?.value ?? '';
+              return bConf.compareTo(aConf);
+            });
 
       final topSkills = skills.take(3).map((skill) {
         final result = skill.formattedCurrentBest ?? skill.name;
@@ -1227,9 +1220,7 @@ class FirestoreService {
           ),
         )
         .snapshots()
-        .map(
-          (snap) => snap.docs.map(RelationshipModel.fromFirestore).toList(),
-        );
+        .map((snap) => snap.docs.map(RelationshipModel.fromFirestore).toList());
   }
 
   Future<void> sendCoachRequest({
@@ -1248,16 +1239,18 @@ class FirestoreService {
     if (existing.docs.isNotEmpty) return;
 
     final id = _relationships.doc().id;
-    await _relationships.doc(id).set(
-      RelationshipModel(
-        id: id,
-        fromUserId: athleteId,
-        toUserId: coachId,
-        type: RelationshipType.coach,
-        status: RelationshipStatus.pending,
-        createdAt: DateTime.now(),
-      ).toFirestore(),
-    );
+    await _relationships
+        .doc(id)
+        .set(
+          RelationshipModel(
+            id: id,
+            fromUserId: athleteId,
+            toUserId: coachId,
+            type: RelationshipType.coach,
+            status: RelationshipStatus.pending,
+            createdAt: DateTime.now(),
+          ).toFirestore(),
+        );
   }
 
   Future<RelationshipModel?> findFriendRelationship(
@@ -1277,7 +1270,7 @@ class FirestoreService {
         final model = RelationshipModel.fromFirestore(doc);
         final matchesPair =
             (model.fromUserId == userIdA && model.toUserId == userIdB) ||
-                (model.fromUserId == userIdB && model.toUserId == userIdA);
+            (model.fromUserId == userIdB && model.toUserId == userIdA);
         if (matchesPair) return model;
       }
       return null;
@@ -1305,15 +1298,15 @@ class FirestoreService {
 
     final reversePendingExists = existing == null
         ? (await _relationships
-                .where('type', isEqualTo: RelationshipType.friend.value)
-                .where('toUserId', isEqualTo: fromUserId)
-                .where('status', isEqualTo: RelationshipStatus.pending.value)
-                .get())
-            .docs
-            .any(
-              (doc) =>
-                  RelationshipModel.fromFirestore(doc).fromUserId == toUserId,
-            )
+                  .where('type', isEqualTo: RelationshipType.friend.value)
+                  .where('toUserId', isEqualTo: fromUserId)
+                  .where('status', isEqualTo: RelationshipStatus.pending.value)
+                  .get())
+              .docs
+              .any(
+                (doc) =>
+                    RelationshipModel.fromFirestore(doc).fromUserId == toUserId,
+              )
         : false;
 
     final action = FriendRequestPolicy.decide(
@@ -1327,11 +1320,15 @@ class FirestoreService {
       case FriendRequestAction.none:
         return;
       case FriendRequestAction.acceptExisting:
-        final relationshipId = existing?.id ??
+        final relationshipId =
+            existing?.id ??
             (await _relationships
                     .where('type', isEqualTo: RelationshipType.friend.value)
                     .where('toUserId', isEqualTo: fromUserId)
-                    .where('status', isEqualTo: RelationshipStatus.pending.value)
+                    .where(
+                      'status',
+                      isEqualTo: RelationshipStatus.pending.value,
+                    )
                     .get())
                 .docs
                 .map(RelationshipModel.fromFirestore)
@@ -1353,18 +1350,20 @@ class FirestoreService {
         return;
       case FriendRequestAction.createPending:
         final id = RelationshipModel.friendDocId(fromUserId, toUserId);
-        await _relationships.doc(id).set(
-          RelationshipModel(
-            id: id,
-            fromUserId: fromUserId,
-            toUserId: toUserId,
-            type: RelationshipType.friend,
-            status: RelationshipStatus.pending,
-            createdAt: DateTime.now(),
-            requesterSeen: true,
-            recipientSeen: false,
-          ).toFirestore(),
-        );
+        await _relationships
+            .doc(id)
+            .set(
+              RelationshipModel(
+                id: id,
+                fromUserId: fromUserId,
+                toUserId: toUserId,
+                type: RelationshipType.friend,
+                status: RelationshipStatus.pending,
+                createdAt: DateTime.now(),
+                requesterSeen: true,
+                recipientSeen: false,
+              ).toFirestore(),
+            );
     }
   }
 
@@ -1372,6 +1371,12 @@ class FirestoreService {
     required String relationshipId,
     required bool accept,
   }) async {
+    final doc = await _relationships.doc(relationshipId).get();
+    if (!doc.exists ||
+        RelationshipModel.fromFirestore(doc).status ==
+            RelationshipStatus.blocked) {
+      throw StateError('Blocked relationships cannot be changed.');
+    }
     await _relationships.doc(relationshipId).update({
       'status': accept
           ? RelationshipStatus.accepted.value
@@ -1391,20 +1396,24 @@ class FirestoreService {
     required String toUserId,
   }) async {
     final existing = await findFriendRelationship(fromUserId, toUserId);
-    final id = existing?.id ?? RelationshipModel.friendDocId(fromUserId, toUserId);
-    await _relationships.doc(id).set(
-      RelationshipModel(
-        id: id,
-        fromUserId: fromUserId,
-        toUserId: toUserId,
-        type: RelationshipType.friend,
-        status: RelationshipStatus.blocked,
-        createdAt: existing?.createdAt ?? DateTime.now(),
-        respondedAt: DateTime.now(),
-        requesterSeen: true,
-        recipientSeen: true,
-      ).toFirestore(),
-    );
+    final id =
+        existing?.id ?? RelationshipModel.friendDocId(fromUserId, toUserId);
+    await _relationships
+        .doc(id)
+        .set(
+          RelationshipModel(
+            id: id,
+            fromUserId: existing?.fromUserId ?? fromUserId,
+            toUserId: existing?.toUserId ?? toUserId,
+            type: RelationshipType.friend,
+            status: RelationshipStatus.blocked,
+            createdAt: existing?.createdAt ?? DateTime.now(),
+            respondedAt: DateTime.now(),
+            blockedByUserId: fromUserId,
+            requesterSeen: true,
+            recipientSeen: true,
+          ).toFirestore(),
+        );
   }
 
   Future<void> markIncomingFriendRequestsSeen(String userId) async {
@@ -1447,15 +1456,26 @@ class FirestoreService {
     required UserRole role,
     String specialty = '',
   }) async {
-    await _userRef(userId).set(
-      {
-        'role': role.value,
-        'specialty': specialty,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _userRef(userId).set({
+      'role': role.value,
+      'specialty': specialty,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     await _syncCoachProfileIfNeeded(userId);
+  }
+
+  Future<void> updateCoachPreference({
+    required String userId,
+    required UserRole currentRole,
+    required bool enableCoach,
+    required String specialty,
+  }) async {
+    final role = switch (currentRole) {
+      UserRole.athlete when enableCoach => UserRole.athleteAndCoach,
+      UserRole.athleteAndCoach when !enableCoach => UserRole.athlete,
+      _ => currentRole,
+    };
+    await updateUserRole(userId: userId, role: role, specialty: specialty);
   }
 
   Future<void> ensureCoachProfile(String userId) async {
@@ -1530,9 +1550,11 @@ class FirestoreService {
     return _verificationRequests
         .where('athleteId', isEqualTo: athleteId)
         .snapshots()
-        .map((snap) => _sortVerificationRequests(
-              snap.docs.map(VerificationRequestModel.fromFirestore).toList(),
-            ));
+        .map(
+          (snap) => _sortVerificationRequests(
+            snap.docs.map(VerificationRequestModel.fromFirestore).toList(),
+          ),
+        );
   }
 
   Stream<List<VerificationRequestModel>> watchVerificationQueueForCoach(
@@ -1541,16 +1563,17 @@ class FirestoreService {
     return _verificationRequests
         .where('coachId', isEqualTo: coachId)
         .snapshots()
-        .map((snap) => _sortVerificationRequests(
-              snap.docs
-                  .map(VerificationRequestModel.fromFirestore)
-                  .where(
-                    (request) =>
-                        request.status ==
-                        VerificationRequestStatus.pending,
-                  )
-                  .toList(),
-            ));
+        .map(
+          (snap) => _sortVerificationRequests(
+            snap.docs
+                .map(VerificationRequestModel.fromFirestore)
+                .where(
+                  (request) =>
+                      request.status == VerificationRequestStatus.pending,
+                )
+                .toList(),
+          ),
+        );
   }
 
   Stream<List<VerificationRequestModel>> watchApprovedVerificationsForCoach(
@@ -1559,23 +1582,23 @@ class FirestoreService {
     return _verificationRequests
         .where('coachId', isEqualTo: coachId)
         .snapshots()
-        .map((snap) => _sortVerificationRequests(
-              snap.docs
-                  .map(VerificationRequestModel.fromFirestore)
-                  .where(
-                    (request) =>
-                        request.status ==
-                        VerificationRequestStatus.approved,
-                  )
-                  .toList(),
-            ));
+        .map(
+          (snap) => _sortVerificationRequests(
+            snap.docs
+                .map(VerificationRequestModel.fromFirestore)
+                .where(
+                  (request) =>
+                      request.status == VerificationRequestStatus.approved,
+                )
+                .toList(),
+          ),
+        );
   }
 
   List<VerificationRequestModel> _sortVerificationRequests(
     List<VerificationRequestModel> requests,
   ) {
-    return requests
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return requests..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   Future<void> addProofWithVerification({
@@ -1641,25 +1664,27 @@ class FirestoreService {
           : skill?.name ?? '';
 
       try {
-        await _verificationRequests.doc(requestId).set(
-          VerificationRequestModel(
-            id: requestId,
-            proofId: proof.id,
-            athleteId: proof.userId,
-            coachId: coachId,
-            gymId: gymId,
-            skillId: proof.skillId,
-            status: VerificationRequestStatus.pending,
-            message: verificationMessage ?? '',
-            createdAt: DateTime.now(),
-            skillName: skillLabel,
-            resultLabel: proof.formattedResult,
-            mediaUrl: proof.mediaUrl,
-            recordedAt: proof.recordedAt,
-            location: proof.location,
-            variantName: proof.variantName ?? '',
-          ).toFirestore(),
-        );
+        await _verificationRequests
+            .doc(requestId)
+            .set(
+              VerificationRequestModel(
+                id: requestId,
+                proofId: proof.id,
+                athleteId: proof.userId,
+                coachId: coachId,
+                gymId: gymId,
+                skillId: proof.skillId,
+                status: VerificationRequestStatus.pending,
+                message: verificationMessage ?? '',
+                createdAt: DateTime.now(),
+                skillName: skillLabel,
+                resultLabel: proof.formattedResult,
+                mediaUrl: proof.mediaUrl,
+                recordedAt: proof.recordedAt,
+                location: proof.location,
+                variantName: proof.variantName ?? '',
+              ).toFirestore(),
+            );
       } catch (e) {
         try {
           await _proofsRef(proof.userId).doc(proof.id).delete();
@@ -1677,8 +1702,7 @@ class FirestoreService {
     if (!requestDoc.exists) return;
 
     final request = VerificationRequestModel.fromFirestore(requestDoc);
-    final coachMemberships =
-        await getMembershipsForUser(request.coachId);
+    final coachMemberships = await getMembershipsForUser(request.coachId);
     final reviewCheck = GymVerificationValidator.canCoachReviewRequest(
       request: request,
       loggedInCoachId: request.coachId,
@@ -1688,8 +1712,9 @@ class FirestoreService {
       throw StateError(reviewCheck.reason ?? 'Cannot approve request');
     }
 
-    final proofDoc =
-        await _proofsRef(request.athleteId).doc(request.proofId).get();
+    final proofDoc = await _proofsRef(
+      request.athleteId,
+    ).doc(request.proofId).get();
     if (!proofDoc.exists) return;
 
     final proof = ProofModel.fromFirestore(proofDoc);
@@ -1704,9 +1729,9 @@ class FirestoreService {
       verifiedAt: now,
     );
 
-    await _proofsRef(request.athleteId)
-        .doc(request.proofId)
-        .update(updatedProof.toFirestore());
+    await _proofsRef(
+      request.athleteId,
+    ).doc(request.proofId).update(updatedProof.toFirestore());
 
     await _verificationRequests.doc(requestId).update({
       'status': VerificationRequestStatus.approved.value,
@@ -1803,7 +1828,11 @@ class FirestoreService {
     final skill = skills.where((s) => s.id == proof.skillId).firstOrNull;
     if (skill == null) return;
 
-    final stack = _stackContext(skill: skill, skills: skills, proofs: allProofs);
+    final stack = _stackContext(
+      skill: skill,
+      skills: skills,
+      proofs: allProofs,
+    );
     await _syncSkillEvidence(stack.primary, stack.proofs);
   }
 
@@ -1913,6 +1942,7 @@ class FirestoreService {
     UserRole? role,
     OnboardingStep? onboardingStep,
     bool? onboardingCompleted,
+    bool? gymSelectionCompleted,
     String? physicalIdentityId,
     String? coachProfileId,
     List<String>? managedGymIds,
@@ -1927,9 +1957,13 @@ class FirestoreService {
     if (accountType != null) updates['accountType'] = accountType.value;
     if (role != null) updates['role'] = role.value;
     if (specialty != null) updates['specialty'] = specialty;
-    if (onboardingStep != null) updates['onboardingStep'] = onboardingStep.value;
+    if (onboardingStep != null)
+      updates['onboardingStep'] = onboardingStep.value;
     if (onboardingCompleted != null) {
       updates['onboardingCompleted'] = onboardingCompleted;
+    }
+    if (gymSelectionCompleted != null) {
+      updates['gymSelectionCompleted'] = gymSelectionCompleted;
     }
     if (physicalIdentityId != null) {
       updates['physicalIdentityId'] = physicalIdentityId;
@@ -1976,15 +2010,11 @@ class FirestoreService {
       final batch = _firestore.batch();
       batch.set(_identityRef(identity.userId), identity.toFirestore());
       batch.set(_handles.doc(handle), {'userId': identity.userId});
-      batch.set(
-        _userRef(identity.userId),
-        {
-          'hasIdentity': true,
-          'physicalIdentityId': identity.userId,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      batch.set(_userRef(identity.userId), {
+        'hasIdentity': true,
+        'physicalIdentityId': identity.userId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       await batch.commit();
       await syncPublicProfile(identity.userId);
       await _recordTimelineMilestones(
@@ -2046,7 +2076,8 @@ class FirestoreService {
 
     await syncPublicProfile(userId);
 
-    final nextStep = OnboardingStep.nextAfterCoachProfile(accountType) ??
+    final nextStep =
+        OnboardingStep.nextAfterCoachProfile(accountType) ??
         (accountType == UserRole.athleteAndCoach
             ? OnboardingStep.selectGym
             : OnboardingStep.completed);
@@ -2093,6 +2124,7 @@ class FirestoreService {
           primaryGymId: existingGymId,
           onboardingStep: OnboardingStep.completed,
           onboardingCompleted: true,
+          gymSelectionCompleted: true,
         );
         return existingGymId;
       }
@@ -2121,6 +2153,7 @@ class FirestoreService {
       primaryGymId: gymId,
       onboardingStep: OnboardingStep.completed,
       onboardingCompleted: true,
+      gymSelectionCompleted: true,
     );
 
     return gymId;
@@ -2149,16 +2182,21 @@ class FirestoreService {
       userId: userId,
       primaryGymId: gymId,
       onboardingStep: OnboardingStep.completed,
+      gymSelectionCompleted: true,
     );
     await completeOnboarding(userId: userId);
   }
 
   Future<void> completeOnboarding({required String userId}) async {
+    final user = await getUser(userId);
     await syncPublicProfile(userId);
     await updateOnboardingProgress(
       userId: userId,
       onboardingCompleted: true,
       onboardingStep: OnboardingStep.completed,
+      gymSelectionCompleted: user?.role.isGymManager == true
+          ? user!.gymSelectionCompleted
+          : true,
     );
   }
 
@@ -2186,9 +2224,7 @@ class FirestoreService {
   }
 
   Future<List<GymMembershipModel>> getMembershipsForUser(String userId) async {
-    final snap = await _gymMemberships
-        .where('userId', isEqualTo: userId)
-        .get();
+    final snap = await _gymMemberships.where('userId', isEqualTo: userId).get();
     return snap.docs.map(GymMembershipModel.fromFirestore).toList();
   }
 
@@ -2196,7 +2232,9 @@ class FirestoreService {
     return _gymMemberships
         .where('userId', isEqualTo: userId)
         .snapshots()
-        .map((snap) => snap.docs.map(GymMembershipModel.fromFirestore).toList());
+        .map(
+          (snap) => snap.docs.map(GymMembershipModel.fromFirestore).toList(),
+        );
   }
 
   Stream<List<GymMembershipModel>> watchGymMemberships({
@@ -2207,11 +2245,13 @@ class FirestoreService {
     return _gymMemberships
         .where('gymId', isEqualTo: gymId)
         .snapshots()
-        .map((snap) => _filterMemberships(
-              snap.docs.map(GymMembershipModel.fromFirestore).toList(),
-              type: type,
-              status: status,
-            ));
+        .map(
+          (snap) => _filterMemberships(
+            snap.docs.map(GymMembershipModel.fromFirestore).toList(),
+            type: type,
+            status: status,
+          ),
+        );
   }
 
   List<GymMembershipModel> _filterMemberships(
@@ -2242,7 +2282,10 @@ class FirestoreService {
   }
 
   Future<GymModel?> getGymByHandle(String handle) async {
-    final normalized = handle.trim().toLowerCase().replaceFirst(RegExp(r'^@'), '');
+    final normalized = handle.trim().toLowerCase().replaceFirst(
+      RegExp(r'^@'),
+      '',
+    );
     if (normalized.isEmpty) return null;
 
     final doc = await _gymHandles.doc(normalized).get();
@@ -2365,11 +2408,17 @@ class FirestoreService {
       await _verificationRequests.doc(request.id).update({
         'status': VerificationRequestStatus.cancelled.value,
         'reviewedAt': FieldValue.serverTimestamp(),
+        'reviewedBy': membership.reviewedBy ?? membership.userId,
       });
-      await _proofsRef(request.athleteId).doc(request.proofId).update({
-        'verificationStatus': VerificationStatus.selfReported.value,
-        'proofSource': ProofSource.selfReported.value,
-      });
+      try {
+        await _proofsRef(request.athleteId).doc(request.proofId).update({
+          'verificationStatus': VerificationStatus.selfReported.value,
+          'proofSource': ProofSource.selfReported.value,
+        });
+      } catch (_) {
+        // Membership and request cancellation already succeeded; proof
+        // reversion is best-effort and can be retried by stack sync.
+      }
     }
   }
 
@@ -2385,9 +2434,7 @@ class FirestoreService {
   }
 
   Future<List<GymModel>> getGymsManagedByUser(String userId) async {
-    final snap = await _gymMemberships
-        .where('userId', isEqualTo: userId)
-        .get();
+    final snap = await _gymMemberships.where('userId', isEqualTo: userId).get();
     final managerMemberships = _filterMemberships(
       snap.docs.map(GymMembershipModel.fromFirestore).toList(),
       type: GymMembershipType.manager,
@@ -2398,9 +2445,7 @@ class FirestoreService {
       final gym = await getGym(membership.gymId);
       if (gym != null) gyms.add(gym);
     }
-    gyms.sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+    gyms.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return gyms;
   }
 
@@ -2420,10 +2465,7 @@ class FirestoreService {
 }
 
 class _SkillStackContext {
-  const _SkillStackContext({
-    required this.primary,
-    required this.proofs,
-  });
+  const _SkillStackContext({required this.primary, required this.proofs});
 
   final SkillModel primary;
   final List<ProofModel> proofs;

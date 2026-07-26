@@ -16,6 +16,7 @@ class UserModel {
     this.primaryGymId,
     this.onboardingStep = OnboardingStep.chooseAccountType,
     this.onboardingCompleted = false,
+    this.gymSelectionCompleted = false,
     this.physicalIdentityId,
     this.coachProfileId,
     this.managedGymIds = const [],
@@ -33,6 +34,7 @@ class UserModel {
   final String? primaryGymId;
   final OnboardingStep onboardingStep;
   final bool onboardingCompleted;
+  final bool gymSelectionCompleted;
   final String? physicalIdentityId;
   final String? coachProfileId;
   final List<String> managedGymIds;
@@ -58,6 +60,7 @@ class UserModel {
       primaryGymId: data['primaryGymId'] as String?,
       onboardingStep: _resolveOnboardingStep(data),
       onboardingCompleted: _resolveOnboardingCompleted(data),
+      gymSelectionCompleted: data['gymSelectionCompleted'] as bool? ?? false,
       physicalIdentityId: data['physicalIdentityId'] as String?,
       coachProfileId: data['coachProfileId'] as String?,
       managedGymIds: List<String>.from(data['managedGymIds'] as List? ?? []),
@@ -93,6 +96,7 @@ class UserModel {
       'primaryGymId': primaryGymId,
       'onboardingStep': onboardingStep.value,
       'onboardingCompleted': onboardingCompleted,
+      'gymSelectionCompleted': gymSelectionCompleted,
       'physicalIdentityId': physicalIdentityId,
       'coachProfileId': coachProfileId,
       'managedGymIds': managedGymIds,
@@ -110,6 +114,7 @@ class UserModel {
     String? primaryGymId,
     OnboardingStep? onboardingStep,
     bool? onboardingCompleted,
+    bool? gymSelectionCompleted,
     String? physicalIdentityId,
     String? coachProfileId,
     List<String>? managedGymIds,
@@ -127,6 +132,8 @@ class UserModel {
       primaryGymId: primaryGymId ?? this.primaryGymId,
       onboardingStep: onboardingStep ?? this.onboardingStep,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      gymSelectionCompleted:
+          gymSelectionCompleted ?? this.gymSelectionCompleted,
       physicalIdentityId: physicalIdentityId ?? this.physicalIdentityId,
       coachProfileId: coachProfileId ?? this.coachProfileId,
       managedGymIds: managedGymIds ?? this.managedGymIds,

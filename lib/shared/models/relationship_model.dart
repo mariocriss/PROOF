@@ -37,13 +37,12 @@ enum RelationshipStatus {
   }
 
   bool get isTerminal => switch (this) {
-        RelationshipStatus.accepted ||
-        RelationshipStatus.declined ||
-        RelationshipStatus.rejected ||
-        RelationshipStatus.blocked =>
-          true,
-        _ => false,
-      };
+    RelationshipStatus.accepted ||
+    RelationshipStatus.declined ||
+    RelationshipStatus.rejected ||
+    RelationshipStatus.blocked => true,
+    _ => false,
+  };
 }
 
 class RelationshipModel {
@@ -55,6 +54,7 @@ class RelationshipModel {
     required this.status,
     required this.createdAt,
     this.respondedAt,
+    this.blockedByUserId,
     this.requesterSeen = true,
     this.recipientSeen = false,
   });
@@ -66,6 +66,7 @@ class RelationshipModel {
   final RelationshipStatus status;
   final DateTime createdAt;
   final DateTime? respondedAt;
+  final String? blockedByUserId;
   final bool requesterSeen;
   final bool recipientSeen;
 
@@ -78,17 +79,19 @@ class RelationshipModel {
     final data = doc.data()!;
     return RelationshipModel(
       id: doc.id,
-      fromUserId: data['fromUserId'] as String? ??
+      fromUserId:
+          data['fromUserId'] as String? ??
           data['requesterUserId'] as String? ??
           '',
-      toUserId: data['toUserId'] as String? ??
+      toUserId:
+          data['toUserId'] as String? ??
           data['recipientUserId'] as String? ??
           '',
       type: RelationshipType.fromString(data['type'] as String?),
       status: RelationshipStatus.fromString(data['status'] as String?),
-      createdAt:
-          (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       respondedAt: (data['respondedAt'] as Timestamp?)?.toDate(),
+      blockedByUserId: data['blockedByUserId'] as String?,
       requesterSeen: data['requesterSeen'] as bool? ?? true,
       recipientSeen: data['recipientSeen'] as bool? ?? false,
     );
@@ -103,8 +106,10 @@ class RelationshipModel {
       'type': type.value,
       'status': status.value,
       'createdAt': Timestamp.fromDate(createdAt),
-      'respondedAt':
-          respondedAt != null ? Timestamp.fromDate(respondedAt!) : null,
+      'respondedAt': respondedAt != null
+          ? Timestamp.fromDate(respondedAt!)
+          : null,
+      'blockedByUserId': blockedByUserId,
       'requesterSeen': requesterSeen,
       'recipientSeen': recipientSeen,
     };
@@ -113,6 +118,7 @@ class RelationshipModel {
   RelationshipModel copyWith({
     RelationshipStatus? status,
     DateTime? respondedAt,
+    String? blockedByUserId,
     bool? requesterSeen,
     bool? recipientSeen,
   }) {
@@ -124,6 +130,7 @@ class RelationshipModel {
       status: status ?? this.status,
       createdAt: createdAt,
       respondedAt: respondedAt ?? this.respondedAt,
+      blockedByUserId: blockedByUserId ?? this.blockedByUserId,
       requesterSeen: requesterSeen ?? this.requesterSeen,
       recipientSeen: recipientSeen ?? this.recipientSeen,
     );

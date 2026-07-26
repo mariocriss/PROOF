@@ -56,6 +56,7 @@ final currentUserProvider = StreamProvider<UserModel?>((ref) async* {
     return;
   }
   final service = ref.watch(firestoreServiceProvider);
+  await service.ensureUserDocument(userId: user.uid, email: user.email ?? '');
   await service.migrateOnboardingIfNeeded(user.uid);
   await service.syncPublicProfile(user.uid);
   yield* service.watchUser(user.uid);
@@ -65,12 +66,14 @@ final currentUserProvider = StreamProvider<UserModel?>((ref) async* {
 final verificationStackSyncProvider = FutureProvider<void>((ref) async {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return;
-  await ref.read(firestoreServiceProvider).syncVerificationStacksForAthlete(
-        user.uid,
-      );
+  await ref
+      .read(firestoreServiceProvider)
+      .syncVerificationStacksForAthlete(user.uid);
 });
 
-final physicalIdentityProvider = StreamProvider.autoDispose<PhysicalIdentity?>((ref) {
+final physicalIdentityProvider = StreamProvider.autoDispose<PhysicalIdentity?>((
+  ref,
+) {
   final authState = ref.watch(authStateProvider);
   return authState.when(
     data: (user) {
@@ -83,7 +86,10 @@ final physicalIdentityProvider = StreamProvider.autoDispose<PhysicalIdentity?>((
 });
 
 /// Runs one-time migrations per session before data streams attach.
-final dataBootstrapProvider = FutureProvider.family<void, String>((ref, userId) async {
+final dataBootstrapProvider = FutureProvider.family<void, String>((
+  ref,
+  userId,
+) async {
   final service = ref.read(firestoreServiceProvider);
   await service.mergeDuplicateSkillsIfNeeded(userId);
   await service.migrateTimelineIfNeeded(userId);
@@ -91,7 +97,9 @@ final dataBootstrapProvider = FutureProvider.family<void, String>((ref, userId) 
   await service.syncPublicProfile(userId);
 });
 
-final skillsProvider = StreamProvider.autoDispose<List<SkillModel>>((ref) async* {
+final skillsProvider = StreamProvider.autoDispose<List<SkillModel>>((
+  ref,
+) async* {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) {
     yield [];
@@ -113,7 +121,9 @@ final proofsProvider = StreamProvider.autoDispose<List<ProofModel>>((ref) {
   );
 });
 
-final timelineProvider = StreamProvider.autoDispose<List<TimelineEvent>>((ref) async* {
+final timelineProvider = StreamProvider.autoDispose<List<TimelineEvent>>((
+  ref,
+) async* {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) {
     yield [];
@@ -123,22 +133,26 @@ final timelineProvider = StreamProvider.autoDispose<List<TimelineEvent>>((ref) a
   yield* ref.watch(firestoreServiceProvider).watchTimeline(user.uid);
 });
 
-final publicSkillsProvider =
-    StreamProvider.family<List<SkillModel>, String>((ref, userId) {
+final publicSkillsProvider = StreamProvider.family<List<SkillModel>, String>((
+  ref,
+  userId,
+) {
   return ref.watch(firestoreServiceProvider).watchSkills(userId);
 });
 
-final publicProofsProvider =
-    StreamProvider.family<List<ProofModel>, String>((ref, userId) {
+final publicProofsProvider = StreamProvider.family<List<ProofModel>, String>((
+  ref,
+  userId,
+) {
   return ref.watch(firestoreServiceProvider).watchProofs(userId);
 });
 
 final publicTimelineProvider =
     StreamProvider.family<List<TimelineEvent>, String>((ref, userId) {
-  return ref.watch(firestoreServiceProvider).watchTimeline(userId);
-});
+      return ref.watch(firestoreServiceProvider).watchTimeline(userId);
+    });
 
 final identityByHandleProvider =
     StreamProvider.family<PhysicalIdentity?, String>((ref, handle) {
-  return ref.watch(firestoreServiceProvider).watchIdentityByHandle(handle);
-});
+      return ref.watch(firestoreServiceProvider).watchIdentityByHandle(handle);
+    });

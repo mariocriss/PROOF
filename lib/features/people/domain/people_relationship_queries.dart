@@ -49,10 +49,7 @@ int countIncomingFriendRequests(
   return pendingIncomingFriendRequests(relationships, userId).length;
 }
 
-int countAcceptedFriends(
-  List<RelationshipModel> relationships,
-  String userId,
-) {
+int countAcceptedFriends(List<RelationshipModel> relationships, String userId) {
   return acceptedFriends(relationships, userId).length;
 }
 
@@ -60,15 +57,17 @@ Set<String> blockedUserIds(
   List<RelationshipModel> relationships,
   String userId,
 ) {
-  return relationships
-      .where(
-        (r) =>
-            r.type == RelationshipType.friend &&
-            r.status == RelationshipStatus.blocked &&
-            r.fromUserId == userId,
-      )
-      .map((r) => r.toUserId)
-      .toSet();
+  final blocked = <String>{};
+  for (final r in relationships) {
+    if (r.type != RelationshipType.friend ||
+        r.status != RelationshipStatus.blocked) {
+      continue;
+    }
+    if (r.fromUserId != userId && r.toUserId != userId) continue;
+    final other = r.fromUserId == userId ? r.toUserId : r.fromUserId;
+    if (other.isNotEmpty) blocked.add(other);
+  }
+  return blocked;
 }
 
 List<RelationshipModel> myCoaches(
