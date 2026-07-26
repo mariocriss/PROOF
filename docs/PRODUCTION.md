@@ -25,9 +25,25 @@ Set `AppFeatures.cloudStorageEnabled = false` in `lib/core/constants/app_feature
 ### Auth & account
 - [x] Password reset (`Forgot password?` on login)
 - [x] Email verification sent on registration + resend from Account
-- [x] Account deletion with password re-authentication
-- [x] Complete Firestore cleanup: relationships, verification requests, user reports, public profile, skills, proofs, timeline, handles, gym data
+- [x] Account deletion with password re-authentication (Auth deleted **only after** Firestore cleanup)
+- [x] Firestore cleanup covers relationships, verification requests, reporter-owned reports, public profile, skills, proofs, timeline, handles, gym memberships, and owned gyms
+- [x] Account deletion rules + orchestration unit tests (see `docs/ACCOUNT_DELETION.md`)
 
+### Account deletion (privacy)
+
+Full map: [`docs/ACCOUNT_DELETION.md`](ACCOUNT_DELETION.md)
+
+| Category | Behavior |
+|---|---|
+| Deleted | User profile, identity, skills, proofs, timeline, handles, coach profile, public profile, both sides of relationships/blocks/friend requests, own verification requests (athlete or coach), reports **submitted by** the user, own gym memberships, gyms the user **created** (all memberships at that gym + gym handle + gym) |
+| Retained | Reports **about** the user (moderation), with handle replaced by `[deleted]` and only the opaque `reportedUserId` kept; other athletes' historically coach-verified proofs with live coach UIDs cleared and label “Verified by coach — account no longer available” |
+| Timing | Seconds for typical accounts; batched subcollection deletes + collection-group coach anonymization |
+| Failure | Auth kept; friendly error; release Crashlytics `account_deletion_failed` with stage + error code only; user can retry |
+| Gym ownership | Created gyms are **closed** (not left ownerless) |
+
+**Deploy note:** publish updated `firestore.rules` before relying on in-app deletion in production.
+
+**Follow-up (not on Spark):** callable Cloud Function deletion job for large accounts / mid-flight kills — designed in `docs/ACCOUNT_DELETION.md`, not implemented as an admin client path.
 ### Privacy & legal
 - [x] Terms acceptance checkbox at registration
 - [x] In-app Privacy Policy and Terms screens + external links
@@ -80,8 +96,8 @@ Set `AppFeatures.cloudStorageEnabled = false` in `lib/core/constants/app_feature
 - [ ] Host Privacy Policy and Terms at live URLs
 - [ ] Generate Android release keystore and first Play Console upload
 - [ ] Deploy Firestore indexes to production
-- [ ] Publish updated Firestore rules (includes `userReports`)
-- [ ] Test full account deletion on a real device
+- [ ] Publish updated Firestore rules (account deletion deletes for verificationRequests / reporter userReports / gym creator membership cleanup)
+- [ ] Test full account deletion on a real device (see `docs/ACCOUNT_DELETION.md`)
 - [ ] Test password reset and email verification end-to-end
 
 ### Should-have

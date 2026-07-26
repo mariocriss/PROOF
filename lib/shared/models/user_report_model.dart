@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:proof/shared/models/deleted_account_markers.dart';
 
 enum UserReportReason {
   spam('spam', 'Spam'),
@@ -29,15 +30,23 @@ class UserReportModel {
     required this.createdAt,
     this.details = '',
     this.reportedHandle = '',
+    this.reportedAccountDeleted = false,
   });
 
   final String id;
   final String reporterUserId;
+
+  /// Internal moderation subject id (Firebase Auth UID). Not a public profile
+  /// field. Retained after account deletion for abuse-correlation only.
   final String reportedUserId;
+
+  /// Public handle snapshot. After subject deletion this is
+  /// [DeletedAccountMarkers.reportedHandle], never a live handle/email/name.
   final String reportedHandle;
   final UserReportReason reason;
   final String details;
   final DateTime createdAt;
+  final bool reportedAccountDeleted;
 
   factory UserReportModel.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -52,6 +61,7 @@ class UserReportModel {
       details: data['details'] as String? ?? '',
       createdAt:
           (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      reportedAccountDeleted: data['reportedAccountDeleted'] as bool? ?? false,
     );
   }
 
@@ -59,10 +69,13 @@ class UserReportModel {
     return {
       'reporterUserId': reporterUserId,
       'reportedUserId': reportedUserId,
-      'reportedHandle': reportedHandle,
+      'reportedHandle': reportedAccountDeleted
+          ? DeletedAccountMarkers.reportedHandle
+          : reportedHandle,
       'reason': reason.value,
       'details': details,
       'createdAt': Timestamp.fromDate(createdAt),
+      'reportedAccountDeleted': reportedAccountDeleted,
     };
   }
 }

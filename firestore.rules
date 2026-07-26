@@ -57,6 +57,62 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(athleteId)/proofs/$(proofId)).data.coachId == request.auth.uid;
     }
 
+    function isAssignedCoachOnProof() {
+      return request.auth != null && (
+        resource.data.coachId == request.auth.uid
+        || resource.data.verifiedByCoachId == request.auth.uid
+        || resource.data.requestedCoachId == request.auth.uid
+      );
+    }
+
+    // Coach account deletion: keep historical verification, clear live coach UIDs.
+    function coachAnonymizesAssignedProof() {
+      return isAssignedCoachOnProof()
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.skillId == resource.data.skillId
+        && request.resource.data.coachAccountDeleted == true
+        && request.resource.data.coachId == null
+        && request.resource.data.verifiedByCoachId == null
+        && request.resource.data.requestedCoachId == null
+        && (
+          request.resource.data.verificationStatus == resource.data.verificationStatus
+          || (
+            resource.data.verificationStatus == 'pending_verification'
+            && request.resource.data.verificationStatus == 'self_reported'
+          )
+          || (
+            resource.data.proofSource == 'coach'
+            && resource.data.verificationStatus != 'pending_verification'
+            && resource.data.verificationStatus != 'rejected'
+            && resource.data.verificationStatus != 'declined'
+            && request.resource.data.verificationStatus == 'coach_verified'
+          )
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'coachId',
+            'requestedCoachId',
+            'verifiedByCoachId',
+            'coachAccountDeleted',
+            'verificationStatus',
+            'proofSource'
+          ]);
+    }
+
+    function isReportSubjectAnonymization() {
+      return request.auth != null
+        && resource.data.reportedUserId == request.auth.uid
+        && request.resource.data.reporterUserId == resource.data.reporterUserId
+        && request.resource.data.reportedUserId == resource.data.reportedUserId
+        && request.resource.data.reason == resource.data.reason
+        && request.resource.data.details == resource.data.details
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.reportedHandle == '[deleted]'
+        && request.resource.data.reportedAccountDeleted == true
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['reportedHandle', 'reportedAccountDeleted']);
+    }
+
     function isGymManager(gymId) {
       let id = membershipDocId(gymId, request.auth.uid, 'manager');
       return exists(/databases/$(database)/documents/gymMemberships/$(id))
@@ -149,13 +205,13 @@ service cloud.firestore {
       match /proofs/{proofId} {
         allow read: if isPublicIdentity(userId)
           || (request.auth != null && request.auth.uid == userId)
-          || (request.auth != null
-            && resource.data.coachId == request.auth.uid);
+          || isAssignedCoachOnProof();
         allow create: if request.auth != null && request.auth.uid == userId;
         allow update: if request.auth != null && (
           request.auth.uid == userId
           || (resource.data.coachId == request.auth.uid
             && request.resource.data.coachId == request.auth.uid)
+          || coachAnonymizesAssignedProof()
         );
         allow delete: if request.auth != null && request.auth.uid == userId;
       }
@@ -217,7 +273,11 @@ service cloud.firestore {
         || isReMembershipRequest()
         || (ownsMembershipDoc(membershipId) && isPendingMembershipRequest())
       );
-      allow delete: if ownsMembershipDoc(membershipId);
+      // Own membership, or gym creator closing the gym during account deletion.
+      allow delete: if request.auth != null && (
+        ownsMembershipDoc(membershipId)
+        || (resource.data.gymId is string && isGymCreator(resource.data.gymId))
+      );
     }
 
     match /relationships/{relationshipId} {
@@ -279,6 +339,11 @@ service cloud.firestore {
         )
         || athleteMarksVerificationStackResynced()
       );
+      // Account deletion: athlete or assigned coach may remove their requests.
+      allow delete: if request.auth != null && (
+        resource.data.athleteId == request.auth.uid
+        || resource.data.coachId == request.auth.uid
+      );
     }
 
     match /coachProfiles/{userId} {
@@ -296,7 +361,12 @@ service cloud.firestore {
         && request.resource.data.reason.size() > 0;
       allow read: if request.auth != null
         && resource.data.reporterUserId == request.auth.uid;
-      allow update, delete: if false;
+      // Reported user may only anonymize their handle on account deletion.
+      allow update: if isReportSubjectAnonymization();
+      // Account deletion: only the reporter may delete their own submissions.
+      // Reports about a user are retained (anonymized) for moderation.
+      allow delete: if request.auth != null
+        && resource.data.reporterUserId == request.auth.uid;
     }
   }
 }

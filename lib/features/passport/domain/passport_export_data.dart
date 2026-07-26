@@ -4,6 +4,7 @@ import 'package:proof/core/utils/identity_confidence_calculator.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/shared/models/confidence_level.dart';
+import 'package:proof/shared/models/deleted_account_markers.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/skill_model.dart';
@@ -460,9 +461,11 @@ class PassportExportProof {
     return PassportExportProof(
       skillName: skillName,
       resultLabel: proof.formattedResult,
-      evidenceSource: proof.isCoachVerifiedForStack
-          ? 'Coach verified'
-          : 'Self reported',
+      evidenceSource: proof.coachAccountDeleted && proof.isCoachVerifiedForStack
+          ? DeletedAccountMarkers.coachUnavailableLabel
+          : proof.isCoachVerifiedForStack
+              ? 'Coach verified'
+              : 'Self reported',
       recordedAt: proof.recordedAt,
       hasMedia: proof.mediaUrl != null && proof.mediaUrl!.isNotEmpty,
       notes: notes.isEmpty ? null : notes,

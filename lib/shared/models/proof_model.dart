@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:proof/core/utils/result_formatter.dart';
+import 'package:proof/shared/models/deleted_account_markers.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/verification_status.dart';
 
@@ -29,6 +30,7 @@ class ProofModel {
     this.location = '',
     this.variantId,
     this.variantName,
+    this.coachAccountDeleted = false,
   });
 
   final String id;
@@ -56,6 +58,10 @@ class ProofModel {
   final String? variantId;
   final String? variantName;
 
+  /// True when the verifying coach account was deleted; historical verification
+  /// is kept without a live coach UID or profile link.
+  final bool coachAccountDeleted;
+
   bool get isCoachVerifiedForStack {
     if (verificationStatus == VerificationStatus.coachVerified) return true;
     if (verificationStatus == VerificationStatus.pendingVerification ||
@@ -66,7 +72,17 @@ class ProofModel {
     return proofSource == ProofSource.coach;
   }
 
+  /// True when a live coach account id is still attached (navigable / active).
+  bool get hasActiveCoachReference {
+    final id = verifiedByCoachId ?? coachId ?? requestedCoachId;
+    if (id == null || id.isEmpty) return false;
+    return !coachAccountDeleted;
+  }
+
   String get verificationLabel {
+    if (coachAccountDeleted && isCoachVerifiedForStack) {
+      return DeletedAccountMarkers.coachUnavailableLabel;
+    }
     if (verificationStatus == VerificationStatus.pendingVerification) {
       return 'Awaiting coach review';
     }
@@ -74,7 +90,7 @@ class ProofModel {
         verificationStatus == VerificationStatus.declined) {
       return 'Verification declined';
     }
-    if (isCoachVerifiedForStack) return ProofSource.coach.label;
+    if (isCoachVerifiedForStack) return VerificationStatus.coachVerified.label;
     return ProofSource.selfReported.label;
   }
 
@@ -97,6 +113,7 @@ class ProofModel {
             proofSource == ProofSource.coach
         ? VerificationStatus.coachVerified
         : verificationStatus;
+    final coachAccountDeleted = data['coachAccountDeleted'] as bool? ?? false;
 
     return ProofModel(
       id: doc.id,
@@ -109,10 +126,13 @@ class ProofModel {
       mediaUrl: data['mediaUrl'] as String?,
       proofSource: proofSource,
       verificationStatus: resolvedStatus,
-      coachId: data['coachId'] as String?,
-      requestedCoachId: data['requestedCoachId'] as String? ?? data['coachId'] as String?,
+      coachId: coachAccountDeleted ? null : data['coachId'] as String?,
+      requestedCoachId: coachAccountDeleted
+          ? null
+          : data['requestedCoachId'] as String? ?? data['coachId'] as String?,
       verificationGymId: data['verificationGymId'] as String?,
-      verifiedByCoachId: data['verifiedByCoachId'] as String?,
+      verifiedByCoachId:
+          coachAccountDeleted ? null : data['verifiedByCoachId'] as String?,
       verifiedAt: (data['verifiedAt'] as Timestamp?)?.toDate(),
       rejectionNote: data['rejectionNote'] as String? ?? '',
       recordedAt: (data['recordedAt'] as Timestamp?)?.toDate() ??
@@ -127,6 +147,7 @@ class ProofModel {
       location: data['location'] as String? ?? '',
       variantId: data['variantId'] as String?,
       variantName: data['variantName'] as String?,
+      coachAccountDeleted: coachAccountDeleted,
     );
   }
 
@@ -141,10 +162,11 @@ class ProofModel {
       'mediaUrl': mediaUrl,
       'proofSource': proofSource.value,
       'verificationStatus': verificationStatus.value,
-      'coachId': coachId,
-      'requestedCoachId': requestedCoachId ?? coachId,
+      'coachId': coachAccountDeleted ? null : coachId,
+      'requestedCoachId':
+          coachAccountDeleted ? null : (requestedCoachId ?? coachId),
       'verificationGymId': verificationGymId,
-      'verifiedByCoachId': verifiedByCoachId,
+      'verifiedByCoachId': coachAccountDeleted ? null : verifiedByCoachId,
       'verifiedAt':
           verifiedAt != null ? Timestamp.fromDate(verifiedAt!) : null,
       'rejectionNote': rejectionNote,
@@ -156,6 +178,7 @@ class ProofModel {
       'location': location,
       'variantId': variantId,
       'variantName': variantName,
+      'coachAccountDeleted': coachAccountDeleted,
     };
   }
 
@@ -168,6 +191,7 @@ class ProofModel {
     String? verifiedByCoachId,
     DateTime? verifiedAt,
     String? rejectionNote,
+    bool? coachAccountDeleted,
   }) {
     return ProofModel(
       id: id,
@@ -194,6 +218,7 @@ class ProofModel {
       location: location,
       variantId: variantId,
       variantName: variantName,
+      coachAccountDeleted: coachAccountDeleted ?? this.coachAccountDeleted,
     );
   }
 }

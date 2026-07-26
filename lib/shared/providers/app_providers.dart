@@ -6,6 +6,7 @@ import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/skill_model.dart';
 import 'package:proof/shared/models/timeline_event.dart';
 import 'package:proof/shared/models/user_model.dart';
+import 'package:proof/shared/services/account_deletion_service.dart';
 import 'package:proof/shared/services/auth_service.dart';
 import 'package:proof/shared/services/firestore_service.dart';
 import 'package:proof/shared/services/signup_service.dart';
@@ -31,6 +32,13 @@ final firestoreServiceProvider = Provider<FirestoreService>((ref) {
 
 final signupServiceProvider = Provider<SignupService>((ref) {
   return SignupService(
+    auth: ref.watch(authServiceProvider),
+    firestore: ref.watch(firestoreServiceProvider),
+  );
+});
+
+final accountDeletionServiceProvider = Provider<AccountDeletionService>((ref) {
+  return AccountDeletionService.create(
     auth: ref.watch(authServiceProvider),
     firestore: ref.watch(firestoreServiceProvider),
   );

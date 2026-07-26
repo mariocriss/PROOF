@@ -31,6 +31,7 @@ import 'package:proof/shared/models/verification_request_model.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
 import 'package:proof/shared/models/user_report_model.dart';
 import 'package:proof/shared/models/verification_status.dart';
+import 'package:proof/shared/services/account_deletion_anonymization.dart';
 
 class FirestoreService {
   FirestoreService(this._firestore, this._auth);
@@ -94,53 +95,88 @@ class FirestoreService {
     await _userRef(user.id).set(user.toFirestore());
   }
 
+  /// Removes all personal Firestore data for [userId].
+  ///
+  /// Idempotent: missing documents are ignored. Does **not** delete Firebase Auth.
+  /// Reports *about* the user are retained but anonymized (handle cleared).
+  /// Other athletes' coach-verified proofs keep historical verification with
+  /// live coach UIDs cleared. Owned gyms are fully closed.
+  /// See `docs/ACCOUNT_DELETION.md`.
   Future<void> deleteAllUserData(String userId) async {
     final user = await getUser(userId);
 
     final identity = await getIdentity(userId);
-    if (identity != null) {
-      await _handles.doc(identity.handle.toLowerCase()).delete();
+    if (identity != null && identity.handle.isNotEmpty) {
+      await _safeDelete(_handles.doc(identity.handle.toLowerCase()));
     }
 
     final coachProfile = await getCoachProfile(userId);
     if (coachProfile != null && coachProfile.handle.isNotEmpty) {
-      final handleDoc = await _handles.doc(coachProfile.handle.toLowerCase()).get();
+      final handleRef = _handles.doc(coachProfile.handle.toLowerCase());
+      final handleDoc = await handleRef.get();
       if (handleDoc.exists && handleDoc.data()?['userId'] == userId) {
-        await _handles.doc(coachProfile.handle.toLowerCase()).delete();
+        await _safeDelete(handleRef);
       }
     }
 
     await _deleteRelationshipsForUser(userId);
     await _deleteVerificationRequestsForUser(userId);
     await _deleteUserReportsForUser(userId);
+    await _anonymizeReportsAboutUser(userId);
+    await _anonymizeProofsVerifiedByCoach(userId);
 
-    await _coachProfiles.doc(userId).delete();
+    await _safeDelete(_coachProfiles.doc(userId));
 
     final memberships = await getMembershipsForUser(userId);
     for (final membership in memberships) {
-      await _gymMemberships.doc(membership.id).delete();
+      await _safeDelete(_gymMemberships.doc(membership.id));
     }
 
-    if (user != null) {
-      for (final gymId in user.managedGymIds) {
-        final gym = await getGym(gymId);
-        if (gym != null && gym.createdBy == userId) {
-          final handleRef = _gymHandles.doc(gym.handle.toLowerCase());
-          final handleDoc = await handleRef.get();
-          if (handleDoc.exists) {
-            await handleRef.delete();
-          }
-          await _gyms.doc(gymId).delete();
-        }
+    // Close gyms this user created (memberships → handle → gym).
+    final ownedGymIds = <String>{
+      if (user != null) ...user.managedGymIds,
+    };
+    // Also discover owned gyms via memberships in case managedGymIds is stale.
+    for (final membership in memberships) {
+      ownedGymIds.add(membership.gymId);
+    }
+
+    for (final gymId in ownedGymIds) {
+      final gym = await getGym(gymId);
+      if (gym == null || gym.createdBy != userId) continue;
+
+      final atGym = await getMembershipsForGym(gymId);
+      for (final membership in atGym) {
+        await _safeDelete(_gymMemberships.doc(membership.id));
       }
+
+      if (gym.handle.isNotEmpty) {
+        await _safeDelete(_gymHandles.doc(gym.handle.toLowerCase()));
+      }
+      await _safeDelete(_gyms.doc(gymId));
     }
 
     await _deleteCollection(_skillsRef(userId));
     await _deleteCollection(_proofsRef(userId));
     await _deleteCollection(_timelineRef(userId));
-    await _identityRef(userId).delete();
-    await _publicProfiles.doc(userId).delete();
-    await _userRef(userId).delete();
+    await _safeDelete(_identityRef(userId));
+    await _safeDelete(_publicProfiles.doc(userId));
+    await _safeDelete(_userRef(userId));
+  }
+
+  Future<void> _safeDelete(DocumentReference<Map<String, dynamic>> ref) async {
+    try {
+      await ref.delete();
+    } on FirebaseException catch (e) {
+      if (e.code == 'not-found') return;
+      rethrow;
+    }
+  }
+
+  Future<List<GymMembershipModel>> getMembershipsForGym(String gymId) async {
+    final snap =
+        await _gymMemberships.where('gymId', isEqualTo: gymId).get();
+    return snap.docs.map(GymMembershipModel.fromFirestore).toList();
   }
 
   Future<void> _deleteRelationshipsForUser(String userId) async {
@@ -156,7 +192,7 @@ class FirestoreService {
     };
 
     for (final id in ids) {
-      await _relationships.doc(id).delete();
+      await _safeDelete(_relationships.doc(id));
     }
   }
 
@@ -174,7 +210,7 @@ class FirestoreService {
     };
 
     for (final id in ids) {
-      await _verificationRequests.doc(id).delete();
+      await _safeDelete(_verificationRequests.doc(id));
     }
   }
 
@@ -183,7 +219,52 @@ class FirestoreService {
         .where('reporterUserId', isEqualTo: userId)
         .get();
     for (final doc in submitted.docs) {
-      await doc.reference.delete();
+      await _safeDelete(doc.reference);
+    }
+  }
+
+  /// Retains reports *about* [userId] for moderation, but strips the public
+  /// handle and marks the subject account deleted.
+  Future<void> _anonymizeReportsAboutUser(String userId) async {
+    final about = await _userReports
+        .where('reportedUserId', isEqualTo: userId)
+        .get();
+    for (final doc in about.docs) {
+      await doc.reference.update(
+        AccountDeletionAnonymization.reportAnonymizationUpdate(),
+      );
+    }
+  }
+
+  /// Other athletes keep coach-verified proofs; live coach UIDs are cleared.
+  Future<void> _anonymizeProofsVerifiedByCoach(String coachUserId) async {
+    final refs = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+
+    for (final field in ['coachId', 'verifiedByCoachId', 'requestedCoachId']) {
+      final snap = await _firestore
+          .collectionGroup('proofs')
+          .where(field, isEqualTo: coachUserId)
+          .get();
+      for (final doc in snap.docs) {
+        refs[doc.reference.path] = doc;
+      }
+    }
+
+    final ownPrefix = 'users/$coachUserId/';
+    for (final doc in refs.values) {
+      if (doc.reference.path.startsWith(ownPrefix)) continue;
+
+      final proof = ProofModel.fromFirestore(doc);
+      final anonymized =
+          AccountDeletionAnonymization.anonymizeDeletedCoachOnProof(proof);
+      await doc.reference.update({
+        'coachId': FieldValue.delete(),
+        'requestedCoachId': FieldValue.delete(),
+        'verifiedByCoachId': FieldValue.delete(),
+        'coachAccountDeleted': anonymized.coachAccountDeleted,
+        'verificationStatus': anonymized.verificationStatus.value,
+        'proofSource': anonymized.proofSource.value,
+      });
     }
   }
 

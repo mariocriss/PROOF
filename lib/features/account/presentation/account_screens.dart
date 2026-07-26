@@ -21,6 +21,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _specialtyController = TextEditingController();
   bool _isCoach = false;
   bool _loaded = false;
+  bool _deleteInFlight = false;
 
   @override
   void dispose() {
@@ -49,12 +50,15 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   Future<void> _deleteAccount(String userId) async {
+    if (_deleteInFlight) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete account?'),
         content: const Text(
-          'This permanently removes your sign-in, profile, proofs, friendships, and gym memberships.',
+          'This permanently removes your sign-in, profile, proofs, friendships, '
+          'and gym memberships. Gyms you created will be closed for all members.',
         ),
         actions: [
           TextButton(
@@ -76,22 +80,33 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     );
     if (password == null || password.isEmpty || !mounted) return;
 
+    setState(() => _deleteInFlight = true);
     try {
-      final auth = ref.read(authServiceProvider);
-      await auth.reauthenticateWithPassword(password);
-      await ref.read(firestoreServiceProvider).deleteAllUserData(userId);
-      await auth.deleteCurrentUser();
-      if (context.mounted) context.go('/register');
-    } on FirebaseAuthException catch (e) {
-      if (!context.mounted) return;
+      final result = await ref.read(accountDeletionServiceProvider).deleteAccount(
+            userId: userId,
+            password: password,
+          );
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        context.go('/register');
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ref.read(authServiceProvider).mapAuthError(e) ??
-                'Could not delete account',
+            result.userMessage ??
+                'Account deletion was not completed. Your account is still active.',
           ),
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _deleteInFlight = false);
+      } else {
+        _deleteInFlight = false;
+      }
     }
   }
 
@@ -196,9 +211,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           ),
           const SizedBox(height: 12),
           ProofButton(
-            label: 'Delete account',
+            label: _deleteInFlight ? 'Deleting…' : 'Delete account',
             isOutlined: true,
-            onPressed: user == null ? null : () => _deleteAccount(user.id),
+            onPressed: (user == null || _deleteInFlight)
+                ? null
+                : () => _deleteAccount(user.id),
           ),
         ],
       ),
