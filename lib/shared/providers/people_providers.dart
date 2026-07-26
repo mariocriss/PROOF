@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:proof/features/people/domain/blocked_user_entry.dart';
 import 'package:proof/features/people/domain/friend_connection_state.dart';
 import 'package:proof/features/people/domain/people_menu_counts.dart';
 import 'package:proof/features/people/domain/people_relationship_queries.dart';
@@ -17,129 +18,177 @@ export 'package:proof/features/people/domain/people_relationship_queries.dart';
 
 final proofStackSummariesProvider =
     Provider.autoDispose<List<ProofStackSkillSummary>>((ref) {
-  final skills = ref.watch(skillsProvider).valueOrNull ?? [];
-  final proofs = ref.watch(proofsProvider).valueOrNull ?? [];
-  return ProofStackMerge.buildSummaries(skills: skills, proofs: proofs);
-});
+      final skills = ref.watch(skillsProvider).valueOrNull ?? [];
+      final proofs = ref.watch(proofsProvider).valueOrNull ?? [];
+      return ProofStackMerge.buildSummaries(skills: skills, proofs: proofs);
+    });
 
 final relationshipsProvider = StreamProvider<List<RelationshipModel>>((ref) {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return Stream.value([]);
-  return ref.watch(firestoreServiceProvider).watchRelationshipsForUser(user.uid);
+  return ref
+      .watch(firestoreServiceProvider)
+      .watchRelationshipsForUser(user.uid);
 });
+
+/// Relationships the signed-in user personally blocked.
+final blockedByMeRelationshipsProvider =
+    Provider.autoDispose<AsyncValue<List<RelationshipModel>>>((ref) {
+      final userId = ref.watch(authStateProvider).valueOrNull?.uid;
+      final relationshipsAsync = ref.watch(relationshipsProvider);
+      if (userId == null) {
+        return const AsyncValue.data([]);
+      }
+      return relationshipsAsync.whenData(
+        (relationships) => relationshipsBlockedByMe(relationships, userId),
+      );
+    });
+
+/// Sorted blocked-user rows with one-shot public profile fetches (no N+1 streams).
+final blockedUsersEntriesProvider =
+    FutureProvider.autoDispose<List<BlockedUserEntry>>((ref) async {
+      final userId = ref.watch(authStateProvider).valueOrNull?.uid;
+      if (userId == null) return const [];
+
+      final relationships = await ref.watch(relationshipsProvider.future);
+      final blocked = relationshipsBlockedByMe(relationships, userId);
+      if (blocked.isEmpty) return const [];
+
+      final otherIds = blocked
+          .map((r) => otherRelationshipUserId(r, userId))
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      final profiles = await ref
+          .read(firestoreServiceProvider)
+          .getFriendDisplayProfiles(otherIds);
+
+      return BlockedUserEntry.buildSorted(
+        relationships: blocked,
+        currentUserId: userId,
+        profilesByUserId: profiles,
+      );
+    });
 
 final searchablePublicProfilesProvider =
     StreamProvider<List<PublicProfileModel>>((ref) async* {
-  final user = ref.watch(authStateProvider).valueOrNull;
-  if (user == null) {
-    yield const <PublicProfileModel>[];
-    return;
-  }
+      final user = ref.watch(authStateProvider).valueOrNull;
+      if (user == null) {
+        yield const <PublicProfileModel>[];
+        return;
+      }
 
-  await ref.watch(dataBootstrapProvider(user.uid).future);
-  yield* ref.watch(firestoreServiceProvider).watchSearchablePublicProfiles();
-});
+      await ref.watch(dataBootstrapProvider(user.uid).future);
+      yield* ref
+          .watch(firestoreServiceProvider)
+          .watchSearchablePublicProfiles();
+    });
 
-final peopleHandlePrefixSearchProvider =
-    FutureProvider.autoDispose.family<List<PublicProfileModel>, String>(
-        (ref, query) async {
-  if (!PeopleSearch.shouldSearch(query)) return [];
+final peopleHandlePrefixSearchProvider = FutureProvider.autoDispose
+    .family<List<PublicProfileModel>, String>((ref, query) async {
+      if (!PeopleSearch.shouldSearch(query)) return [];
 
-  final handleQuery = PeopleSearch.handleFromQuery(query);
-  if (handleQuery.contains(' ')) return [];
+      final handleQuery = PeopleSearch.handleFromQuery(query);
+      if (handleQuery.contains(' ')) return [];
 
-  return ref
-      .read(firestoreServiceProvider)
-      .searchPublicProfilesByHandlePrefix(handleQuery);
-});
+      return ref
+          .read(firestoreServiceProvider)
+          .searchPublicProfilesByHandlePrefix(handleQuery);
+    });
 
-final peopleSearchResultsProvider =
-    Provider.autoDispose.family<List<PublicProfileModel>, String>((ref, query) {
-  final userId = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
-  final profiles = ref.watch(searchablePublicProfilesProvider).valueOrNull ?? [];
-  final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
-  final blockedIds = blockedUserIds(relationships, userId);
-  final prefixMatches =
-      ref.watch(peopleHandlePrefixSearchProvider(query)).valueOrNull ?? [];
+final peopleSearchResultsProvider = Provider.autoDispose
+    .family<List<PublicProfileModel>, String>((ref, query) {
+      final userId = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
+      final profiles =
+          ref.watch(searchablePublicProfilesProvider).valueOrNull ?? [];
+      final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+      final blockedIds = blockedUserIds(relationships, userId);
+      final prefixMatches =
+          ref.watch(peopleHandlePrefixSearchProvider(query)).valueOrNull ?? [];
 
-  final filtered = PeopleSearch.filterProfiles(
-    profiles,
-    query,
-    currentUserId: userId,
-    blockedUserIds: blockedIds,
-  );
+      final filtered = PeopleSearch.filterProfiles(
+        profiles,
+        query,
+        currentUserId: userId,
+        blockedUserIds: blockedIds,
+      );
 
-  return PeopleSearch.mergeResults(
-    filtered: filtered,
-    extra: prefixMatches,
-    currentUserId: userId,
-    blockedUserIds: blockedIds,
-  );
-});
+      return PeopleSearch.mergeResults(
+        filtered: filtered,
+        extra: prefixMatches,
+        currentUserId: userId,
+        blockedUserIds: blockedIds,
+      );
+    });
 
-final publicProfileProvider =
-    FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, userId) {
-  return ref.watch(firestoreServiceProvider).getPublicProfile(userId);
-});
+final publicProfileProvider = FutureProvider.autoDispose
+    .family<PublicProfileModel?, String>((ref, userId) {
+      return ref.watch(firestoreServiceProvider).getPublicProfile(userId);
+    });
 
-final friendDisplayProfileProvider =
-    FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, userId) {
-  return ref.watch(firestoreServiceProvider).getFriendDisplayProfile(userId);
-});
+final friendDisplayProfileProvider = FutureProvider.autoDispose
+    .family<PublicProfileModel?, String>((ref, userId) {
+      return ref
+          .watch(firestoreServiceProvider)
+          .getFriendDisplayProfile(userId);
+    });
 
-final publicProfileByHandleProvider =
-    FutureProvider.autoDispose.family<PublicProfileModel?, String>((ref, handle) {
-  return ref.watch(firestoreServiceProvider).getOrSyncPublicProfileByHandle(handle);
-});
+final publicProfileByHandleProvider = FutureProvider.autoDispose
+    .family<PublicProfileModel?, String>((ref, handle) {
+      return ref
+          .watch(firestoreServiceProvider)
+          .getOrSyncPublicProfileByHandle(handle);
+    });
 
-final coachProfilesProvider = StreamProvider.autoDispose<List<CoachProfile>>((ref) {
+final coachProfilesProvider = StreamProvider.autoDispose<List<CoachProfile>>((
+  ref,
+) {
   return ref.watch(firestoreServiceProvider).watchCoachProfiles();
 });
 
-final coachProfileProvider =
-    StreamProvider.autoDispose.family<CoachProfile?, String>((ref, userId) {
-  return ref.watch(firestoreServiceProvider).watchCoachProfile(userId);
-});
+final coachProfileProvider = StreamProvider.autoDispose
+    .family<CoachProfile?, String>((ref, userId) {
+      return ref.watch(firestoreServiceProvider).watchCoachProfile(userId);
+    });
 
 final verificationRequestsProvider =
     StreamProvider.autoDispose<List<VerificationRequestModel>>((ref) {
-  final user = ref.watch(authStateProvider).valueOrNull;
-  if (user == null) return Stream.value([]);
-  return ref
-      .watch(firestoreServiceProvider)
-      .watchVerificationRequestsForAthlete(user.uid);
-});
+      final user = ref.watch(authStateProvider).valueOrNull;
+      if (user == null) return Stream.value([]);
+      return ref
+          .watch(firestoreServiceProvider)
+          .watchVerificationRequestsForAthlete(user.uid);
+    });
 
 final coachVerificationQueueProvider =
     StreamProvider.autoDispose<List<VerificationRequestModel>>((ref) {
-  final user = ref.watch(authStateProvider).valueOrNull;
-  if (user == null) return Stream.value([]);
-  return ref
-      .watch(firestoreServiceProvider)
-      .watchVerificationQueueForCoach(user.uid);
-});
+      final user = ref.watch(authStateProvider).valueOrNull;
+      if (user == null) return Stream.value([]);
+      return ref
+          .watch(firestoreServiceProvider)
+          .watchVerificationQueueForCoach(user.uid);
+    });
 
-final coachVerifiedProofsProvider =
-    StreamProvider.autoDispose.family<List<VerificationRequestModel>, String>(
-        (ref, coachId) {
-  return ref
-      .watch(firestoreServiceProvider)
-      .watchApprovedVerificationsForCoach(coachId);
-});
+final coachVerifiedProofsProvider = StreamProvider.autoDispose
+    .family<List<VerificationRequestModel>, String>((ref, coachId) {
+      return ref
+          .watch(firestoreServiceProvider)
+          .watchApprovedVerificationsForCoach(coachId);
+    });
 
 final coachApprovedVerificationsProvider =
     StreamProvider.autoDispose<List<VerificationRequestModel>>((ref) {
-  final user = ref.watch(authStateProvider).valueOrNull;
-  if (user == null) return Stream.value([]);
-  return ref
-      .watch(firestoreServiceProvider)
-      .watchApprovedVerificationsForCoach(user.uid);
-});
+      final user = ref.watch(authStateProvider).valueOrNull;
+      if (user == null) return Stream.value([]);
+      return ref
+          .watch(firestoreServiceProvider)
+          .watchApprovedVerificationsForCoach(user.uid);
+    });
 
-final identityByUserIdProvider =
-    FutureProvider.autoDispose.family<PhysicalIdentity?, String>((ref, userId) {
-  return ref.watch(firestoreServiceProvider).getIdentity(userId);
-});
+final identityByUserIdProvider = FutureProvider.autoDispose
+    .family<PhysicalIdentity?, String>((ref, userId) {
+      return ref.watch(firestoreServiceProvider).getIdentity(userId);
+    });
 
 final incomingFriendRequestCountProvider = Provider<int>((ref) {
   final userId = ref.watch(authStateProvider).valueOrNull?.uid;
@@ -148,16 +197,16 @@ final incomingFriendRequestCountProvider = Provider<int>((ref) {
   return countIncomingFriendRequests(relationships, userId);
 });
 
-final friendConnectionProvider =
-    Provider.autoDispose.family<FriendConnection, String>((ref, otherUserId) {
-  final userId = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
-  final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
-  return FriendConnection.resolve(
-    currentUserId: userId,
-    otherUserId: otherUserId,
-    relationships: relationships,
-  );
-});
+final friendConnectionProvider = Provider.autoDispose
+    .family<FriendConnection, String>((ref, otherUserId) {
+      final userId = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
+      final relationships = ref.watch(relationshipsProvider).valueOrNull ?? [];
+      return FriendConnection.resolve(
+        currentUserId: userId,
+        otherUserId: otherUserId,
+        relationships: relationships,
+      );
+    });
 
 final moreMenuCountsProvider = Provider<MoreMenuCounts>((ref) {
   final userId = ref.watch(authStateProvider).valueOrNull?.uid;
@@ -184,5 +233,4 @@ final moreMenuCountsProvider = Provider<MoreMenuCounts>((ref) {
 List<RelationshipModel> pendingFriendRequests(
   List<RelationshipModel> relationships,
   String userId,
-) =>
-    pendingIncomingFriendRequests(relationships, userId);
+) => pendingIncomingFriendRequests(relationships, userId);

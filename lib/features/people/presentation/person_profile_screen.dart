@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/people/domain/friend_connection_state.dart';
+import 'package:proof/features/people/presentation/unblock_user_flow.dart';
 import 'package:proof/features/people/presentation/widgets/people_widgets.dart';
 import 'package:proof/features/people/presentation/widgets/report_user_dialog.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
@@ -52,6 +53,13 @@ class PersonProfileScreen extends ConsumerWidget {
 
         final connection = ref.watch(friendConnectionProvider(profile.userId));
         final isFriend = connection.state == FriendConnectionState.accepted;
+        final blockedByMe =
+            connection.state == FriendConnectionState.blocked &&
+            connection.relationship?.blockedByUserId == userId;
+        final canBlock =
+            userId != null &&
+            userId != profile.userId &&
+            connection.state != FriendConnectionState.blocked;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -72,12 +80,30 @@ class PersonProfileScreen extends ConsumerWidget {
                         fromUserId: currentUserId,
                         toUserId: profile.userId,
                       );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '${profile.displayName} has been blocked',
+                            ),
+                          ),
+                        );
+                      }
+                    } else if (value == 'unblock') {
+                      final rel = connection.relationship;
+                      if (rel == null) return;
+                      await confirmAndUnblockUser(
+                        context: context,
+                        ref: ref,
+                        currentUserId: currentUserId,
+                        relationship: rel,
+                        displayName: profile.displayName,
+                      );
                     } else if (value == 'report') {
                       final result = await showDialog<ReportUserResult>(
                         context: context,
-                        builder: (context) => ReportUserDialog(
-                          reportedHandle: profile.handle,
-                        ),
+                        builder: (context) =>
+                            ReportUserDialog(reportedHandle: profile.handle),
                       );
                       if (result == null || !context.mounted) return;
                       await service.submitUserReport(
@@ -100,9 +126,20 @@ class PersonProfileScreen extends ConsumerWidget {
                         value: 'remove',
                         child: Text('Remove friend'),
                       ),
-                    if (isFriend)
-                      const PopupMenuItem(value: 'block', child: Text('Block user')),
-                    const PopupMenuItem(value: 'report', child: Text('Report user')),
+                    if (canBlock)
+                      const PopupMenuItem(
+                        value: 'block',
+                        child: Text('Block user'),
+                      ),
+                    if (blockedByMe)
+                      const PopupMenuItem(
+                        value: 'unblock',
+                        child: Text('Unblock'),
+                      ),
+                    const PopupMenuItem(
+                      value: 'report',
+                      child: Text('Report user'),
+                    ),
                   ],
                 ),
             ],
@@ -113,10 +150,7 @@ class PersonProfileScreen extends ConsumerWidget {
               _ProfileHeader(profile: profile),
               const SizedBox(height: 20),
               if (profile.bio.isNotEmpty) ...[
-                _SectionCard(
-                  title: 'About',
-                  child: Text(profile.bio),
-                ),
+                _SectionCard(title: 'About', child: Text(profile.bio)),
                 const SizedBox(height: 16),
               ],
               _SectionCard(
@@ -124,9 +158,9 @@ class PersonProfileScreen extends ConsumerWidget {
                 child: Text(
                   profile.identityStatus,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               if (profile.publicTopSkills.isNotEmpty) ...[
@@ -158,14 +192,15 @@ class PersonProfileScreen extends ConsumerWidget {
                       Text(
                         'View ${profile.displayName.split(' ').first}\'s full passport.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: AppColors.inkSecondary,
-                            ),
+                          color: AppColors.inkSecondary,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       ProofButton(
                         label: 'Open Passport',
                         isOutlined: true,
-                        onPressed: () => context.push('/passport/${profile.handle}'),
+                        onPressed: () =>
+                            context.push('/passport/${profile.handle}'),
                       ),
                     ],
                   ),
@@ -177,8 +212,8 @@ class PersonProfileScreen extends ConsumerWidget {
                   child: Text(
                     'Connect to see more of this passport.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.inkSecondary,
-                        ),
+                      color: AppColors.inkSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -223,8 +258,9 @@ class _ProfileHeader extends StatelessWidget {
           CircleAvatar(
             radius: 40,
             backgroundColor: AppColors.surfaceElevated,
-            backgroundImage:
-                profile.avatarUrl != null ? NetworkImage(profile.avatarUrl!) : null,
+            backgroundImage: profile.avatarUrl != null
+                ? NetworkImage(profile.avatarUrl!)
+                : null,
             child: profile.avatarUrl == null
                 ? Text(
                     profile.displayName.isNotEmpty
@@ -240,23 +276,23 @@ class _ProfileHeader extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             profile.displayName,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           Text(
             '@${profile.handle}',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.inkMuted,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppColors.inkMuted),
           ),
           if (locationAge.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               locationAge,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.inkSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.inkSecondary),
             ),
           ],
         ],
@@ -287,9 +323,9 @@ class _SectionCard extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppColors.inkMuted,
-                  letterSpacing: 1.2,
-                ),
+              color: AppColors.inkMuted,
+              letterSpacing: 1.2,
+            ),
           ),
           const SizedBox(height: 10),
           child,

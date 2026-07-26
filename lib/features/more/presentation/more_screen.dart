@@ -48,18 +48,17 @@ class MoreScreen extends ConsumerWidget {
                       children: [
                         Text(
                           'More',
-                          style:
-                              Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.5,
-                                  ),
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.5,
+                              ),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'People. Trust. Settings.',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.inkMuted,
-                              ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.inkMuted),
                         ),
                       ],
                     ),
@@ -76,7 +75,9 @@ class MoreScreen extends ConsumerWidget {
                               identity.displayName.isNotEmpty
                                   ? identity.displayName[0].toUpperCase()
                                   : '?',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             )
                           : null,
                     ),
@@ -110,17 +111,13 @@ class MoreScreen extends ConsumerWidget {
                             children: [
                               Text(
                                 'Waiting for gym approval',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
+                                style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 'Your coach membership request is pending. You cannot verify proofs until a gym manager approves you.',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
+                                style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: AppColors.inkMuted,
                                       height: 1.4,
@@ -140,7 +137,9 @@ class MoreScreen extends ConsumerWidget {
                     icon: Icons.people_outline,
                     title: 'Friends',
                     subtitle: 'Connect with people you trust',
-                    badge: counts.friendRequests > 0 ? counts.friendRequests : null,
+                    badge: counts.friendRequests > 0
+                        ? counts.friendRequests
+                        : null,
                     onTap: () => context.push('/friends'),
                   ),
                   MoreMenuRow(
@@ -166,7 +165,9 @@ class MoreScreen extends ConsumerWidget {
                     icon: Icons.person_add_outlined,
                     title: 'Friend Requests',
                     subtitle: 'People who want to connect',
-                    badge: counts.friendRequests > 0 ? counts.friendRequests : null,
+                    badge: counts.friendRequests > 0
+                        ? counts.friendRequests
+                        : null,
                     onTap: () => context.push('/friend-requests'),
                   ),
                 ],
@@ -222,6 +223,12 @@ class MoreScreen extends ConsumerWidget {
                     title: 'Edit Profile',
                     subtitle: 'Name, handle, bio, and location',
                     onTap: () => context.push('/edit-profile'),
+                  ),
+                  MoreMenuRow(
+                    icon: Icons.security_outlined,
+                    title: 'Privacy & safety',
+                    subtitle: 'Public profile and blocked users',
+                    onTap: () => context.push('/privacy-settings'),
                   ),
                   MoreMenuRow(
                     icon: Icons.lock_outline,

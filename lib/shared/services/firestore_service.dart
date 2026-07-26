@@ -12,6 +12,7 @@ import 'package:proof/core/utils/skill_uniqueness.dart';
 import 'package:proof/core/utils/timeline_milestone_evaluator.dart';
 import 'package:proof/core/utils/timeline_rebuilder.dart';
 import 'package:proof/features/people/domain/friend_request_policy.dart';
+import 'package:proof/features/people/domain/people_relationship_queries.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
@@ -1414,6 +1415,47 @@ class FirestoreService {
             recipientSeen: true,
           ).toFirestore(),
         );
+  }
+
+  /// Removes a block by deleting the relationship document.
+  ///
+  /// Only the user in [blockedByUserId] may unblock. Does not recreate
+  /// friendship — both users return to no relationship.
+  Future<void> unblockUser({
+    required String currentUserId,
+    required String relationshipId,
+  }) async {
+    final doc = await _relationships.doc(relationshipId).get();
+    if (!doc.exists) return;
+
+    final relationship = RelationshipModel.fromFirestore(doc);
+    if (!canUnblockRelationship(relationship, currentUserId)) {
+      throw StateError('Only the blocker can unblock this user.');
+    }
+
+    await _relationships.doc(relationshipId).delete();
+  }
+
+  /// One-shot parallel profile lookup (no live listeners).
+  Future<Map<String, PublicProfileModel?>> getFriendDisplayProfiles(
+    Iterable<String> userIds,
+  ) async {
+    final unique = userIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (unique.isEmpty) return {};
+
+    final entries = await Future.wait(
+      unique.map((id) async {
+        try {
+          return MapEntry(id, await getFriendDisplayProfile(id));
+        } on FirebaseException catch (e) {
+          if (e.code == 'permission-denied') {
+            return MapEntry<String, PublicProfileModel?>(id, null);
+          }
+          rethrow;
+        }
+      }),
+    );
+    return Map<String, PublicProfileModel?>.fromEntries(entries);
   }
 
   Future<void> markIncomingFriendRequestsSeen(String userId) async {

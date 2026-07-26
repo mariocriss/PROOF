@@ -10,6 +10,7 @@ import 'package:proof/core/utils/result_formatter.dart';
 import 'package:proof/core/utils/result_normalizer.dart';
 import 'package:proof/core/utils/skill_display_name.dart';
 import 'package:proof/core/utils/validators.dart';
+import 'package:proof/features/skills/domain/skill_dropdown.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
@@ -114,10 +115,9 @@ class _ProofCard extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
 
     final user = ref.read(authServiceProvider).currentUser!;
-    await ref.read(firestoreServiceProvider).deleteProof(
-          userId: user.uid,
-          proofId: proof.id,
-        );
+    await ref
+        .read(firestoreServiceProvider)
+        .deleteProof(userId: user.uid, proofId: proof.id);
   }
 
   @override
@@ -141,12 +141,15 @@ class _ProofCard extends ConsumerWidget {
                   children: [
                     Text(
                       proof.formattedResult,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: AppColors.accent,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleLarge?.copyWith(color: AppColors.accent),
                     ),
                     const SizedBox(height: 4),
-                    Text(skillName, style: Theme.of(context).textTheme.labelLarge),
+                    Text(
+                      skillName,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
                   ],
                 ),
               ),
@@ -155,7 +158,10 @@ class _ProofCard extends ConsumerWidget {
                 color: AppColors.accent,
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppColors.inkMuted),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.inkMuted,
+                ),
                 onPressed: () => _delete(context, ref),
                 tooltip: 'Delete proof',
               ),
@@ -168,7 +174,10 @@ class _ProofCard extends ConsumerWidget {
           ),
           if (proof.location.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text('Location: ${proof.location}', style: Theme.of(context).textTheme.bodyMedium),
+            Text(
+              'Location: ${proof.location}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ],
           if (proof.notes.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -202,7 +211,7 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notesController = TextEditingController();
   late final TextEditingController _resultController;
-  SkillModel? _selectedSkill;
+  String? _selectedSkillId;
   late String _selectedUnit;
   DateTime? _recordedAt;
   ProofSource _proofSource = ProofSource.selfReported;
@@ -216,6 +225,7 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
     super.initState();
     _resultController = TextEditingController(text: widget.initialResult ?? '');
     _selectedUnit = widget.initialUnit ?? '';
+    _selectedSkillId = widget.skillId;
     if (widget.isFirstProof) {
       _recordedAt = DateTime.now();
     }
@@ -228,9 +238,10 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
     super.dispose();
   }
 
-  void _onSkillChanged(SkillModel? skill) {
+  void _onSkillIdChanged(String? skillId, List<SkillModel> availableSkills) {
+    final skill = skillById(availableSkills, skillId);
     setState(() {
-      _selectedSkill = skill;
+      _selectedSkillId = skill?.id;
       if (skill != null) {
         if (widget.isFirstProof &&
             widget.initialUnit != null &&
@@ -259,35 +270,37 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final skill = _selectedSkill;
+    final skills = ref.read(skillsProvider).valueOrNull ?? const <SkillModel>[];
+    final available = uniqueSkillsById(
+      skills.where((s) => s.status == SkillStatus.active),
+    );
+    final skill = skillById(available, _selectedSkillId);
     if (skill == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a skill')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a skill')));
       return;
     }
 
     final resultRaw = _resultController.text.trim();
     if (resultRaw.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a result')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter a result')));
       return;
     }
 
     if (_proofSource == ProofSource.coach && _selectedCoachId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a coach')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a coach')));
       return;
     }
 
     if (_proofSource == ProofSource.coach && _selectedGymId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Coach verification requires approved gym membership.',
-          ),
+          content: Text('Coach verification requires approved gym membership.'),
         ),
       );
       return;
@@ -335,7 +348,9 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         variantName: skill.variantName,
       );
 
-      await ref.read(firestoreServiceProvider).addProofWithVerification(
+      await ref
+          .read(firestoreServiceProvider)
+          .addProofWithVerification(
             proof: proof,
             coachId: _selectedCoachId,
             gymId: _selectedGymId,
@@ -355,19 +370,19 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
           'Permission denied. Publish the latest Firestore rules and confirm both athlete and coach memberships are approved at the same gym.',
         _ => e.message ?? 'Could not save proof (${e.code}).',
       };
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } on StateError catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save proof: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save proof: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -397,8 +412,9 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (skills) {
-          final activeSkills =
-              skills.where((s) => s.status == SkillStatus.active).toList();
+          final activeSkills = uniqueSkillsById(
+            skills.where((s) => s.status == SkillStatus.active),
+          );
 
           if (activeSkills.isEmpty && !widget.isFirstProof) {
             return EmptyState(
@@ -412,23 +428,39 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
             );
           }
 
-          final targetSkillId = widget.skillId;
-          if (targetSkillId != null && _selectedSkill == null) {
-            final match = activeSkills
-                .where((s) => s.id == targetSkillId)
-                .firstOrNull;
+          // Keep selection keyed by ID across provider refreshes after proof save.
+          final dropdownValue = resolvedSkillDropdownValue(
+            selectedId: _selectedSkillId,
+            skills: activeSkills,
+          );
+
+          if (widget.isFirstProof &&
+              skillById(activeSkills, _selectedSkillId ?? widget.skillId) ==
+                  null &&
+              widget.skillId != null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          // One-time hydrate of unit/date when opened with a route skillId.
+          if (dropdownValue != null &&
+              _selectedSkillId == dropdownValue &&
+              _selectedUnit.isEmpty) {
+            final match = skillById(activeSkills, dropdownValue);
             if (match != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _onSkillChanged(match);
+                if (!mounted) return;
+                if (_selectedSkillId == dropdownValue &&
+                    _selectedUnit.isEmpty) {
+                  setState(() {
+                    _selectedUnit = match.defaultUnit;
+                    _recordedAt ??= DateTime.now();
+                  });
+                }
               });
             }
           }
 
-          if (widget.isFirstProof && _selectedSkill == null && targetSkillId != null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final skill = _selectedSkill;
+          final skill = skillById(activeSkills, dropdownValue);
           final recordedAt = _recordedAt ?? DateTime.now();
           final unit = _selectedUnit.isNotEmpty
               ? _selectedUnit
@@ -453,7 +485,8 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                       ),
                       child: Text(
                         "Great! Let's document your first proof.",
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               color: AppColors.accent,
                               fontWeight: FontWeight.w600,
                             ),
@@ -474,19 +507,26 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                       value: SkillDisplayName.format(skill),
                     )
                   else
-                    DropdownButtonFormField<SkillModel>(
-                      initialValue: _selectedSkill,
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(
+                        'add-proof-skill-${dropdownValue ?? 'none'}',
+                      ),
+                      initialValue: dropdownValue,
                       decoration: const InputDecoration(labelText: 'Skill'),
-                      items: activeSkills
-                          .map(
-                            (s) => DropdownMenuItem(
-                              value: s,
-                              child: Text(SkillDisplayName.format(s)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _onSkillChanged,
-                      validator: (v) => v == null ? 'Select a skill' : null,
+                      items: [
+                        for (final s in activeSkills)
+                          DropdownMenuItem<String>(
+                            value: s.id,
+                            child: Text(SkillDisplayName.format(s)),
+                          ),
+                      ],
+                      onChanged: _isLoading
+                          ? null
+                          : (id) => _onSkillIdChanged(id, activeSkills),
+                      validator: (v) =>
+                          v == null || skillById(activeSkills, v) == null
+                          ? 'Select a skill'
+                          : null,
                     ),
                   if (skill != null) ...[
                     const SizedBox(height: 16),
@@ -503,9 +543,9 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                         'Locked to the first result from adding this skill. '
                         'Add more proofs later to record new results.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.inkMuted,
-                              height: 1.4,
-                            ),
+                          color: AppColors.inkMuted,
+                          height: 1.4,
+                        ),
                       ),
                     ] else ...[
                       ResultInputField(
@@ -564,8 +604,9 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                                       ? AppColors.accent
                                       : AppColors.border,
                                 ),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                               child: Text(
                                 source.label,
@@ -580,7 +621,8 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                     if (_proofSource == ProofSource.coach) ...[
                       const SizedBox(height: 16),
                       _CoachVerificationPicker(
-                        hasApprovedAthleteMembership: hasApprovedAthleteMembership,
+                        hasApprovedAthleteMembership:
+                            hasApprovedAthleteMembership,
                         selectedCoachId: _selectedCoachId,
                         onCoachSelected: (coachId, gymId) {
                           setState(() {
@@ -603,14 +645,16 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                         'Photo attachments are not available on the current launch plan. '
                         'You can still save text-based proofs.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.inkMuted,
-                              height: 1.4,
-                            ),
+                          color: AppColors.inkMuted,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 32),
                     ProofButton(
-                      label: widget.isFirstProof ? 'Save first proof' : 'Add proof',
+                      label: widget.isFirstProof
+                          ? 'Save first proof'
+                          : 'Add proof',
                       isLoading: _isLoading,
                       onPressed: _save,
                     ),
@@ -641,9 +685,9 @@ class _CoachVerificationPicker extends ConsumerWidget {
     if (!hasApprovedAthleteMembership) {
       return Text(
         'Your gym membership must be approved before you can request coach verification. Check status in More → Gyms.',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.inkSecondary,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppColors.inkSecondary),
       );
     }
 
@@ -669,9 +713,9 @@ class _CoachVerificationPicker extends ConsumerWidget {
         children: [
           Text(
             'Could not load coaches.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.error,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.error),
           ),
           const SizedBox(height: 8),
           TextButton(
@@ -685,105 +729,92 @@ class _CoachVerificationPicker extends ConsumerWidget {
           return Text(
             'No eligible coaches are linked to your gym yet. '
             'Ask your gym manager to approve a coach membership.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.inkSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.inkSecondary),
           );
         }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Select coach',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
+            Text('Select coach', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 8),
-            ...coaches.map(
-              (coach) {
-                final coachId = coach.membership.userId;
-                final selected = selectedCoachId == coachId;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Material(
-                    color: selected
-                        ? AppColors.accent.withValues(alpha: 0.1)
-                        : AppColors.surface,
+            ...coaches.map((coach) {
+              final coachId = coach.membership.userId;
+              final selected = selectedCoachId == coachId;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: selected
+                      ? AppColors.accent.withValues(alpha: 0.1)
+                      : AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => onCoachSelected(
-                        coachId,
-                        coach.membership.gymId,
+                    onTap: () =>
+                        onCoachSelected(coachId, coach.membership.gymId),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected ? AppColors.accent : AppColors.border,
+                          width: selected ? 1.5 : 1,
+                        ),
                       ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          IdentityAvatar(
+                            avatarUrl: coach.avatarUrl,
+                            displayName: coach.displayName,
+                            radius: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  coach.displayName,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: selected
+                                            ? AppColors.accent
+                                            : AppColors.ink,
+                                      ),
+                                ),
+                                Text(
+                                  coach.subtitle,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: selected
+                                            ? AppColors.accentLight
+                                            : AppColors.inkSecondary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            selected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
                             color: selected
                                 ? AppColors.accent
-                                : AppColors.border,
-                            width: selected ? 1.5 : 1,
+                                : AppColors.inkMuted,
                           ),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            IdentityAvatar(
-                              avatarUrl: coach.avatarUrl,
-                              displayName: coach.displayName,
-                              radius: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    coach.displayName,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: selected
-                                              ? AppColors.accent
-                                              : AppColors.ink,
-                                        ),
-                                  ),
-                                  Text(
-                                    coach.subtitle,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: selected
-                                              ? AppColors.accentLight
-                                              : AppColors.inkSecondary,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(
-                              selected
-                                  ? Icons.radio_button_checked
-                                  : Icons.radio_button_off,
-                              color: selected
-                                  ? AppColors.accent
-                                  : AppColors.inkMuted,
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
                     ),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            }),
           ],
         );
       },

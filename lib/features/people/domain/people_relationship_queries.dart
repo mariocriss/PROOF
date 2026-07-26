@@ -70,6 +70,39 @@ Set<String> blockedUserIds(
   return blocked;
 }
 
+/// Friend relationships the [userId] personally blocked (not blocks against them).
+List<RelationshipModel> relationshipsBlockedByMe(
+  List<RelationshipModel> relationships,
+  String userId,
+) {
+  return relationships
+      .where(
+        (r) =>
+            r.type == RelationshipType.friend &&
+            r.status == RelationshipStatus.blocked &&
+            r.blockedByUserId == userId &&
+            (r.fromUserId == userId || r.toUserId == userId),
+      )
+      .toList();
+}
+
+String otherRelationshipUserId(RelationshipModel relationship, String userId) {
+  return relationship.fromUserId == userId
+      ? relationship.toUserId
+      : relationship.fromUserId;
+}
+
+bool canUnblockRelationship(
+  RelationshipModel relationship,
+  String currentUserId,
+) {
+  return relationship.type == RelationshipType.friend &&
+      relationship.status == RelationshipStatus.blocked &&
+      relationship.blockedByUserId == currentUserId &&
+      (relationship.fromUserId == currentUserId ||
+          relationship.toUserId == currentUserId);
+}
+
 List<RelationshipModel> myCoaches(
   List<RelationshipModel> relationships,
   String userId,

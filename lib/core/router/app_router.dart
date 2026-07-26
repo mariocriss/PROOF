@@ -27,6 +27,7 @@ import 'package:proof/features/shell/presentation/app_shell.dart';
 import 'package:proof/features/skills/presentation/skills_screens.dart';
 import 'package:proof/features/timeline/presentation/timeline_screens.dart';
 import 'package:proof/features/legal/presentation/legal_screens.dart';
+import 'package:proof/features/privacy/presentation/blocked_users_screen.dart';
 import 'package:proof/features/privacy/presentation/privacy_settings_screen.dart';
 import 'package:proof/features/verification/presentation/verification_requests_screen.dart';
 import 'package:proof/shared/models/onboarding_step.dart';
@@ -109,10 +110,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
@@ -178,8 +176,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/skills',
                 builder: (context, state) => DeferredShellTab(
                   tabIndex: 1,
-                  builder: (_, __) =>
-                      const SkillsScreen(showBackButton: false),
+                  builder: (_, __) => const SkillsScreen(showBackButton: false),
                 ),
                 routes: [
                   GoRoute(
@@ -385,6 +382,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/privacy-settings',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const PrivacySettingsScreen(),
+      ),
+      GoRoute(
+        path: '/blocked-users',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const BlockedUsersScreen(),
       ),
       GoRoute(
         path: '/privacy-policy',

@@ -48,6 +48,11 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authServiceProvider).authStateChanges;
 });
 
+/// Convenience UID for UI that needs overrides in tests without a Firebase User.
+final currentAuthUidProvider = Provider<String?>((ref) {
+  return ref.watch(authStateProvider).valueOrNull?.uid;
+});
+
 final currentUserProvider = StreamProvider<UserModel?>((ref) async* {
   final authState = ref.watch(authStateProvider);
   final user = authState.valueOrNull;

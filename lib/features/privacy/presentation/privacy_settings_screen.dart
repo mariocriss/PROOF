@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/legal_constants.dart';
 import 'package:proof/core/theme/app_colors.dart';
+import 'package:proof/features/people/presentation/widgets/people_widgets.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/widgets/legal_link.dart';
@@ -39,9 +40,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       );
       await ref.read(firestoreServiceProvider).updateIdentity(updated);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Privacy settings saved')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Privacy settings saved')));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -53,9 +54,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     final identityAsync = ref.watch(physicalIdentityProvider);
 
     return identityAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
       data: (identity) {
         if (identity == null) {
@@ -93,11 +93,23 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
               const SizedBox(height: 8),
               Text(
                 'Friends can still see profile details based on your connection. '
-                'Blocking and reporting are available from user profiles.',
+                'You can block people from their profile, and manage blocks below.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.inkMuted,
-                      height: 1.4,
-                    ),
+                  color: AppColors.inkMuted,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const PeopleSectionLabel(title: 'SAFETY'),
+              MoreMenuCard(
+                children: [
+                  MoreMenuRow(
+                    icon: Icons.block_outlined,
+                    title: 'Blocked users',
+                    subtitle: 'Review and unblock people you blocked',
+                    onTap: () => context.push('/blocked-users'),
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
               ProofButton(
@@ -109,9 +121,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
               Text(
                 'LEGAL',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      letterSpacing: 1.2,
-                      color: AppColors.inkSecondary,
-                    ),
+                  letterSpacing: 1.2,
+                  color: AppColors.inkSecondary,
+                ),
               ),
               const SizedBox(height: 12),
               LegalLinkButton(

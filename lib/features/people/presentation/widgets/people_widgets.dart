@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/people/domain/friend_connection_state.dart';
+import 'package:proof/features/people/presentation/unblock_user_flow.dart';
 import 'package:proof/shared/models/coach_profile.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/public_profile_model.dart';
@@ -22,9 +23,9 @@ class PeopleSectionLabel extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: AppColors.inkMuted,
-              letterSpacing: 1.2,
-            ),
+          color: AppColors.inkMuted,
+          letterSpacing: 1.2,
+        ),
       ),
     );
   }
@@ -100,24 +101,26 @@ class MoreMenuRow extends StatelessWidget {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.ink,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.ink,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.inkSecondary,
-                          ),
+                        color: AppColors.inkSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
               if (badge != null && badge! > 0) ...[
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceElevated,
                     borderRadius: BorderRadius.circular(12),
@@ -125,13 +128,17 @@ class MoreMenuRow extends StatelessWidget {
                   child: Text(
                     '$badge',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
               ],
-              const Icon(Icons.chevron_right, size: 20, color: AppColors.inkMuted),
+              const Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: AppColors.inkMuted,
+              ),
             ],
           ),
         ),
@@ -177,8 +184,9 @@ class CoachListCard extends StatelessWidget {
               CircleAvatar(
                 radius: 24,
                 backgroundColor: AppColors.surfaceElevated,
-                backgroundImage:
-                    avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                backgroundImage: avatarUrl != null
+                    ? NetworkImage(avatarUrl)
+                    : null,
                 child: avatarUrl == null
                     ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?')
                     : null,
@@ -191,26 +199,29 @@ class CoachListCard extends StatelessWidget {
                     Text(
                       name,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     Text(
                       '@$handle',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.inkMuted,
-                          ),
+                        color: AppColors.inkMuted,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       profile.specialty,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.inkSecondary,
-                          ),
+                        color: AppColors.inkSecondary,
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _MiniStat(value: '${profile.athleteCount}', label: 'Athletes'),
+                        _MiniStat(
+                          value: '${profile.athleteCount}',
+                          label: 'Athletes',
+                        ),
                         Container(
                           width: 1,
                           height: 24,
@@ -249,15 +260,15 @@ class _MiniStat extends StatelessWidget {
       children: [
         Text(
           value,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         Text(
           label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppColors.inkMuted,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: AppColors.inkMuted),
         ),
       ],
     );
@@ -308,9 +319,11 @@ class PeopleSegmentTabs extends StatelessWidget {
                         tabs[index],
                         textAlign: TextAlign.center,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color:
-                                  selected ? Colors.white : AppColors.inkSecondary,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: selected
+                                  ? Colors.white
+                                  : AppColors.inkSecondary,
                               fontWeight: FontWeight.w600,
                             ),
                       ),
@@ -330,8 +343,11 @@ class PeopleSegmentTabs extends StatelessWidget {
                         ),
                         child: Text(
                           '$badge',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: selected ? Colors.white : AppColors.accent,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: selected
+                                    ? Colors.white
+                                    : AppColors.accent,
                                 fontWeight: FontWeight.w700,
                               ),
                         ),
@@ -382,16 +398,16 @@ class IdentityBannerCard extends StatelessWidget {
                     Text(
                       'Your Identity. Your Standard.',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Keep building. Keep proving.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.82),
-                          ),
+                        color: Colors.white.withValues(alpha: 0.82),
+                      ),
                     ),
                   ],
                 ),
@@ -414,7 +430,11 @@ class IdentityBannerCard extends StatelessWidget {
 }
 
 class PublicProfileAvatar extends StatelessWidget {
-  const PublicProfileAvatar({super.key, required this.profile, this.radius = 24});
+  const PublicProfileAvatar({
+    super.key,
+    required this.profile,
+    this.radius = 24,
+  });
 
   final PublicProfileModel profile;
   final double radius;
@@ -424,8 +444,9 @@ class PublicProfileAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.surfaceElevated,
-      backgroundImage:
-          profile.avatarUrl != null ? NetworkImage(profile.avatarUrl!) : null,
+      backgroundImage: profile.avatarUrl != null
+          ? NetworkImage(profile.avatarUrl!)
+          : null,
       child: profile.avatarUrl == null
           ? Text(
               profile.displayName.isNotEmpty
@@ -485,7 +506,21 @@ class FriendConnectionButton extends ConsumerWidget {
                 ],
               );
       case FriendConnectionState.blocked:
-        return _FriendActionChip(label: 'Blocked', enabled: false);
+        final blockedByMe = connection.relationship?.blockedByUserId == userId;
+        if (!blockedByMe) {
+          return _FriendActionChip(label: 'Blocked', enabled: false);
+        }
+        return compact
+            ? _FriendActionChip(
+                label: 'Unblock',
+                enabled: true,
+                onTap: () => _unblock(context, ref),
+              )
+            : ProofButton(
+                label: 'Unblock',
+                isOutlined: true,
+                onPressed: () => _unblock(context, ref),
+              );
       case FriendConnectionState.declined:
       case FriendConnectionState.none:
         return compact
@@ -501,6 +536,19 @@ class FriendConnectionButton extends ConsumerWidget {
     }
   }
 
+  Future<void> _unblock(BuildContext context, WidgetRef ref) async {
+    final currentUserId = userId;
+    final relationship = connection.relationship;
+    if (currentUserId == null || relationship == null) return;
+    await confirmAndUnblockUser(
+      context: context,
+      ref: ref,
+      currentUserId: currentUserId,
+      relationship: relationship,
+      displayName: profile.displayName,
+    );
+  }
+
   Future<void> _sendRequest(BuildContext context, WidgetRef ref) async {
     final fromUserId = userId;
     if (fromUserId == null) {
@@ -513,30 +561,35 @@ class FriendConnectionButton extends ConsumerWidget {
     }
 
     try {
-      await ref.read(firestoreServiceProvider).sendFriendRequest(
-            fromUserId: fromUserId,
-            toUserId: profile.userId,
-          );
+      await ref
+          .read(firestoreServiceProvider)
+          .sendFriendRequest(fromUserId: fromUserId, toUserId: profile.userId);
     } on FirebaseException catch (e) {
       if (context.mounted) {
-        final message = e.message?.isNotEmpty == true ? e.message! : e.toString();
+        final message = e.message?.isNotEmpty == true
+            ? e.message!
+            : e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send request (${e.code}): $message')),
+          SnackBar(
+            content: Text('Could not send request (${e.code}): $message'),
+          ),
         );
       }
       return;
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not send request: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not send request: $e')));
       }
       return;
     }
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Friend request sent to ${profile.displayName}')),
+        SnackBar(
+          content: Text('Friend request sent to ${profile.displayName}'),
+        ),
       );
     }
   }
@@ -544,10 +597,9 @@ class FriendConnectionButton extends ConsumerWidget {
   Future<void> _respond(WidgetRef ref, {required bool accept}) async {
     final relationship = connection.relationship;
     if (relationship == null) return;
-    await ref.read(firestoreServiceProvider).respondToRelationship(
-          relationshipId: relationship.id,
-          accept: accept,
-        );
+    await ref
+        .read(firestoreServiceProvider)
+        .respondToRelationship(relationshipId: relationship.id, accept: accept);
   }
 }
 
@@ -575,9 +627,9 @@ class _FriendActionChip extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: enabled ? Colors.white : AppColors.inkSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: enabled ? Colors.white : AppColors.inkSecondary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ),

@@ -66,9 +66,38 @@ describe('friend relationship transitions', () => {
     );
   });
 
-  it('allows blocker to unblock explicitly', async () => {
+  it('allows blocker to unblock via status transition to declined', async () => {
     await seed({...pending, status: 'blocked', blockedByUserId: B});
     await assertSucceeds(db(B).collection('relationships').doc(doc()).update({
+      status: 'declined',
+    }));
+  });
+
+  it('allows blocker to unblock by deleting the relationship', async () => {
+    await seed({...pending, status: 'blocked', blockedByUserId: B});
+    await assertSucceeds(
+      db(B).collection('relationships').doc(doc()).delete(),
+    );
+  });
+
+  it('denies blocked participant from deleting the block', async () => {
+    await seed({...pending, status: 'blocked', blockedByUserId: B});
+    await assertFails(
+      db(A).collection('relationships').doc(doc()).delete(),
+    );
+  });
+
+  it('denies unrelated users from deleting a blocked relationship', async () => {
+    await seed({...pending, status: 'blocked', blockedByUserId: B});
+    await assertFails(
+      env.authenticatedContext('outsider').firestore()
+        .collection('relationships').doc(doc()).delete(),
+    );
+  });
+
+  it('denies blocked participant from transitioning blocked to declined', async () => {
+    await seed({...pending, status: 'blocked', blockedByUserId: B});
+    await assertFails(db(A).collection('relationships').doc(doc()).update({
       status: 'declined',
     }));
   });
