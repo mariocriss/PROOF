@@ -1024,7 +1024,7 @@ class _SkillFormScreenState extends ConsumerState<_SkillFormScreen> {
       text: widget.entry.isCustom ? '' : widget.entry.name,
     );
     _disciplineController = TextEditingController(
-      text: widget.entry.isCustom ? 'Other' : widget.entry.discipline,
+      text: widget.entry.discipline,
     );
     _descriptionController = TextEditingController();
     _resultController = TextEditingController();
