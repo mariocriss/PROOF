@@ -20,7 +20,7 @@ Mark each item with owner type:
 | Item | Tag | Status |
 |---|---|---|
 | Create Play app | Play / Owner | [ ] |
-| Package name = `com.proof.proof` | Code / Play | [ ] |
+| Package name = `com.proofapp.mobile` | Code / Play | [ ] |
 | App name “PROOF” | Code / Play | [ ] |
 
 ## Signing & binary

@@ -26,7 +26,7 @@ fun missingReleaseSigningMessage(): String {
 }
 
 android {
-    namespace = "com.proof.proof"
+    namespace = "com.proofapp.mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -36,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.proof.proof"
+        applicationId = "com.proofapp.mobile"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

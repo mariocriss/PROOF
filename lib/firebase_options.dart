@@ -4,9 +4,14 @@ import 'package:flutter/foundation.dart'
 
 /// Firebase configuration.
 ///
-/// Replace with real values by running:
+/// Android (`com.proofapp.mobile`) must be registered in Firebase Console for
+/// project `proof-e913a`, then regenerate this file and
+/// `android/app/google-services.json` with:
+///
 ///   dart pub global activate flutterfire_cli
-///   flutterfire configure
+///   flutterfire configure --project=proof-e913a
+///
+/// Do not reuse the previous Android app registration for `com.proof.proof`.
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -24,13 +29,6 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCOAYuogWwuuDyd9qmSx-UD3hi0-sCaxE4',
-    appId: '1:233832067155:android:fa291498fc7a7158e096a6',
-    messagingSenderId: '233832067155',
-    projectId: 'proof-e913a',
-    storageBucket: 'proof-e913a.firebasestorage.app',
-  );
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyCe1dnpGBpFHMm-r_BrDQJ5GTPouOoX49s',
     appId: '1:233832067155:ios:4fd9d33d8df724e7e096a6',
@@ -38,5 +36,13 @@ class DefaultFirebaseOptions {
     projectId: 'proof-e913a',
     storageBucket: 'proof-e913a.firebasestorage.app',
     iosBundleId: 'com.proof.proof',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyCOAYuogWwuuDyd9qmSx-UD3hi0-sCaxE4',
+    appId: '1:233832067155:android:21b9857ead93216ee096a6',
+    messagingSenderId: '233832067155',
+    projectId: 'proof-e913a',
+    storageBucket: 'proof-e913a.firebasestorage.app',
   );
 }

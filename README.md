@@ -26,13 +26,15 @@ The core product loop:
 
 ### 2. Connect Flutter to Firebase
 
+Android Play package: **`com.proofapp.mobile`** (see `docs/FIREBASE_ANDROID_APP.md`).
+
 ```bash
 dart pub global activate flutterfire_cli
-flutterfire configure
+flutterfire configure --project=proof-e913a
 ```
 
-This replaces the placeholder `lib/firebase_options.dart` and `android/app/google-services.json`.
-
+This writes `lib/firebase_options.dart` and `android/app/google-services.json`
+for the registered Firebase apps.
 ### 3. Run on Android emulator
 
 ```bash

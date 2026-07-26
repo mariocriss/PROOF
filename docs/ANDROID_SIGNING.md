@@ -88,7 +88,7 @@ Confirm the certificate is **not** an Android Debug certificate and matches your
 
 ## Play App Signing
 
-1. Create the app in Play Console (`com.proof.proof`).
+1. Create / use the app in Play Console (`com.proofapp.mobile`).
 2. Enroll in **Play App Signing**.
 3. Upload the AAB signed with your **upload** key (`proof-upload`).
 4. Google holds the **app signing** key used for device distribution; your upload key is only for Console uploads.

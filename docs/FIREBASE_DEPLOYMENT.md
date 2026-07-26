@@ -21,7 +21,7 @@ If no project is selected:
 firebase use proof-e913a
 ```
 
-Confirm the Android app in Console matches `android/app/google-services.json` (`project_id`: `proof-e913a`).
+Confirm the Android app in Console is **`com.proofapp.mobile`** (not the retired `com.proof.proof` Android app) and matches `android/app/google-services.json` (`project_id`: `proof-e913a`). See `docs/FIREBASE_ANDROID_APP.md`.
 
 ## 2. Inspect diff before deployment
 

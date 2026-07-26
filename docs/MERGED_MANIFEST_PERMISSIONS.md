@@ -12,7 +12,7 @@ after `flutter build appbundle --release`.
 | `android.permission.INTERNET` | Flutter / Firebase | Network for Auth, Firestore, Crashlytics | Yes | No (normal) | Declare network use / data collection as applicable | **Keep** |
 | `android.permission.ACCESS_NETWORK_STATE` | Firebase / Play services libs | Check connectivity before network calls | Yes for Firebase stack | No | Related to app functionality, not a sensitive runtime permission | **Keep** |
 | `com.google.android.providers.gsf.permission.READ_GSERVICES` | Google Play services / Firebase | Legacy GSF access used by Google libraries | Brought by Google deps | No | Usually not listed as a user-facing permission; do not request manually | **Keep** (dependency) |
-| `com.proof.proof.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | AndroidX / Firebase Crashlytics or Play services | Signature permission so dynamic receivers stay not-exported | Framework requirement | No | Internal; not a user permission | **Keep** |
+| `com.proofapp.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | AndroidX / Firebase Crashlytics or Play services | Signature permission so dynamic receivers stay not-exported | Framework requirement | No | Internal; not a user permission | **Keep** |
 
 ## Permissions **not** present in this release merge
 
