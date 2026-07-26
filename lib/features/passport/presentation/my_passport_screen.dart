@@ -5,7 +5,15 @@ import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/passport/domain/passport_credential_view_data.dart';
 import 'package:proof/features/passport/presentation/passport_share_service.dart';
 import 'package:proof/features/passport/presentation/widgets/passport_credential_card.dart';
+import 'package:proof/shared/models/gym_membership_model.dart';
+import 'package:proof/shared/models/physical_identity.dart';
+import 'package:proof/shared/models/proof_model.dart';
+import 'package:proof/shared/models/relationship_model.dart';
+import 'package:proof/shared/models/skill_model.dart';
+import 'package:proof/shared/models/timeline_event.dart';
 import 'package:proof/shared/providers/app_providers.dart';
+import 'package:proof/shared/providers/gym_providers.dart';
+import 'package:proof/shared/providers/people_providers.dart';
 
 class MyPassportScreen extends ConsumerWidget {
   const MyPassportScreen({super.key});
@@ -63,7 +71,13 @@ class MyPassportScreen extends ConsumerWidget {
                   _TrustIndicatorsCard(indicators: data.trustIndicators),
                   const SizedBox(height: 28),
                   const PassportSectionLabel(title: 'SHARE PASSPORT'),
-                  _SharePassportCard(data: data),
+                  _SharePassportCard(
+                    data: data,
+                    identity: identity,
+                    skills: skills,
+                    proofs: proofs,
+                    timeline: timeline,
+                  ),
                 ],
               ),
             ),
@@ -225,10 +239,88 @@ class _TrustColumn extends StatelessWidget {
   }
 }
 
-class _SharePassportCard extends StatelessWidget {
-  const _SharePassportCard({required this.data});
+class _SharePassportCard extends ConsumerStatefulWidget {
+  const _SharePassportCard({
+    required this.data,
+    required this.identity,
+    required this.skills,
+    required this.proofs,
+    required this.timeline,
+  });
 
   final PassportCredentialViewData data;
+  final PhysicalIdentity identity;
+  final List<SkillModel> skills;
+  final List<ProofModel> proofs;
+  final List<TimelineEvent> timeline;
+
+  @override
+  ConsumerState<_SharePassportCard> createState() => _SharePassportCardState();
+}
+
+class _SharePassportCardState extends ConsumerState<_SharePassportCard> {
+  bool _exporting = false;
+
+  Future<({String? gymName, String? coachName})> _resolveContext() async {
+    String? gymName;
+    String? coachName;
+
+    final memberships =
+        ref.read(userGymMembershipsProvider).valueOrNull ?? [];
+    final approvedAthlete = memberships.where(
+      (m) =>
+          m.membershipType == GymMembershipType.athlete &&
+          m.status == GymMembershipStatus.approved,
+    );
+    if (approvedAthlete.isNotEmpty) {
+      final gym =
+          await ref.read(gymProvider(approvedAthlete.first.gymId).future);
+      gymName = gym?.name;
+    }
+
+    final userId = ref.read(authStateProvider).valueOrNull?.uid;
+    final relationships = ref.read(relationshipsProvider).valueOrNull ?? [];
+    if (userId != null) {
+      final coachRel = relationships.where(
+        (r) =>
+            r.type == RelationshipType.coach &&
+            r.status == RelationshipStatus.accepted &&
+            r.fromUserId == userId,
+      );
+      if (coachRel.isNotEmpty) {
+        final coachId = coachRel.first.toUserId;
+        final coach = await ref.read(coachProfileProvider(coachId).future);
+        coachName = coach?.displayName;
+        if (coachName == null || coachName.isEmpty) {
+          final identity =
+              await ref.read(identityByUserIdProvider(coachId).future);
+          coachName = identity?.displayName;
+        }
+      }
+    }
+
+    return (gymName: gymName, coachName: coachName);
+  }
+
+  Future<void> _downloadPdf() async {
+    if (_exporting || PassportShareService.isPdfExportInProgress) return;
+    setState(() => _exporting = true);
+    try {
+      final contextNames = await _resolveContext();
+      if (!mounted) return;
+      await PassportShareService.sharePdf(
+        context: context,
+        identity: widget.identity,
+        skills: widget.skills,
+        proofs: widget.proofs,
+        timeline: widget.timeline,
+        gymName: contextNames.gymName,
+        coachName: contextNames.coachName,
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,7 +348,8 @@ class _SharePassportCard extends StatelessWidget {
                 child: _ShareTile(
                   icon: Icons.qr_code_2_outlined,
                   label: 'QR Code',
-                  onTap: () => PassportShareService.showQrCode(context, data),
+                  onTap: () =>
+                      PassportShareService.showQrCode(context, widget.data),
                 ),
               ),
               const SizedBox(width: 10),
@@ -264,15 +357,16 @@ class _SharePassportCard extends StatelessWidget {
                 child: _ShareTile(
                   icon: Icons.link,
                   label: 'Share Link',
-                  onTap: () => PassportShareService.shareLink(data),
+                  onTap: () => PassportShareService.shareLink(widget.data),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _ShareTile(
                   icon: Icons.download_outlined,
-                  label: 'Download PDF',
-                  onTap: () => PassportShareService.sharePdf(data),
+                  label: _exporting ? 'Preparing…' : 'Download PDF',
+                  onTap: _exporting ? null : _downloadPdf,
+                  busy: _exporting,
                 ),
               ),
               const SizedBox(width: 10),
@@ -280,8 +374,19 @@ class _SharePassportCard extends StatelessWidget {
                 child: _ShareTile(
                   icon: Icons.more_horiz,
                   label: 'More Options',
-                  onTap: () =>
-                      PassportShareService.showMoreOptions(context, data),
+                  onTap: () async {
+                    final contextNames = await _resolveContext();
+                    if (!context.mounted) return;
+                    PassportShareService.showMoreOptions(
+                      context: context,
+                      data: widget.data,
+                      skills: widget.skills,
+                      proofs: widget.proofs,
+                      timeline: widget.timeline,
+                      gymName: contextNames.gymName,
+                      coachName: contextNames.coachName,
+                    );
+                  },
                 ),
               ),
             ],
@@ -297,11 +402,13 @@ class _ShareTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.busy = false,
   });
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -315,7 +422,18 @@ class _ShareTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
           child: Column(
             children: [
-              Icon(icon, color: AppColors.accent, size: 22),
+              if (busy)
+                const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(
+                  icon,
+                  color: onTap == null ? AppColors.inkMuted : AppColors.accent,
+                  size: 22,
+                ),
               const SizedBox(height: 8),
               Text(
                 label,
