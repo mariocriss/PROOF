@@ -7,7 +7,6 @@ import 'package:proof/features/dashboard/domain/dashboard_view_data.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/features/proof_stack/presentation/widgets/confidence_explanation_sheet.dart';
 import 'package:proof/shared/models/timeline_event.dart';
-import 'package:proof/shared/models/user_role.dart';
 import 'package:proof/shared/providers/app_providers.dart';
 import 'package:proof/shared/widgets/confidence_block_progress.dart';
 import 'package:proof/shared/widgets/proof_widgets.dart';

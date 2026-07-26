@@ -108,7 +108,7 @@ void main() {
 
     final bytes = await PassportPdfDocument.build(export);
     expect(bytes.length, greaterThan(1000));
-    expect(export.publicUrl, 'https://proof.app/passport/mario');
+    expect(export.publicUrl, isNull);
   });
 
   test('generates PDF for sparse profile without optional data', () async {

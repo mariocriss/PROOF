@@ -51,12 +51,12 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           _SettingsTile(
             title: 'Privacy Policy',
-            subtitle: 'View in app',
+            subtitle: 'In-app draft · open hosted page when available',
             onTap: () => context.push('/privacy-policy'),
           ),
           _SettingsTile(
             title: 'Terms of Service',
-            subtitle: 'View in app',
+            subtitle: 'In-app draft · open hosted page when available',
             onTap: () => context.push('/terms'),
           ),
           const SizedBox(height: 32),

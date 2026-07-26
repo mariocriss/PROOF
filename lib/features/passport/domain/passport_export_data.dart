@@ -45,7 +45,8 @@ class PassportExportData {
 
   final String displayName;
   final String handle;
-  final String publicUrl;
+  /// Public web URL when configured; otherwise `null` (no QR / live link).
+  final String? publicUrl;
   final DateTime generatedAt;
   final DateTime memberSince;
   final String overallConfidenceLabel;

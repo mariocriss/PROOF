@@ -33,7 +33,8 @@ class PassportCredentialViewData {
   final int coachVerifiedCount;
   final int filledSegments;
   final PassportTrustIndicators trustIndicators;
-  final String publicUrl;
+  /// Public web URL when configured; otherwise `null`.
+  final String? publicUrl;
   final List<String> featuredBadgeLabels;
 
   factory PassportCredentialViewData.build({
@@ -41,7 +42,7 @@ class PassportCredentialViewData {
     required List<SkillModel> skills,
     required List<ProofModel> proofs,
     required List<TimelineEvent> timeline,
-    required String publicUrl,
+    String? publicUrl,
     DateTime Function()? now,
   }) {
     final clock = now ?? DateTime.now;

@@ -225,21 +225,31 @@ class _PdfHeader extends pw.StatelessWidget {
           ),
           pw.Column(
             children: [
-              pw.BarcodeWidget(
-                barcode: pw.Barcode.qrCode(),
-                data: data.publicUrl,
-                width: 64,
-                height: 64,
-                color: PassportPdfColors.ink,
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                'Live profile',
-                style: const pw.TextStyle(
-                  fontSize: 7,
-                  color: PassportPdfColors.lightMuted,
+              if (data.publicUrl != null) ...[
+                pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: data.publicUrl!,
+                  width: 64,
+                  height: 64,
+                  color: PassportPdfColors.ink,
                 ),
-              ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'Live profile',
+                  style: const pw.TextStyle(
+                    fontSize: 7,
+                    color: PassportPdfColors.lightMuted,
+                  ),
+                ),
+              ] else
+                pw.Text(
+                  'Offline PDF\nsnapshot',
+                  textAlign: pw.TextAlign.center,
+                  style: const pw.TextStyle(
+                    fontSize: 7,
+                    color: PassportPdfColors.lightMuted,
+                  ),
+                ),
             ],
           ),
         ],
@@ -268,16 +278,25 @@ class _PdfFooter extends pw.StatelessWidget {
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.UrlLink(
-                destination: data.publicUrl,
-                child: pw.Text(
-                  'PROOF  ·  ${data.publicUrl}',
+              if (data.publicUrl != null)
+                pw.UrlLink(
+                  destination: data.publicUrl!,
+                  child: pw.Text(
+                    'PROOF  ·  ${data.publicUrl}',
+                    style: const pw.TextStyle(
+                      fontSize: 7,
+                      color: PassportPdfColors.accent,
+                    ),
+                  ),
+                )
+              else
+                pw.Text(
+                  'PROOF  ·  PDF snapshot (no public web profile)',
                   style: const pw.TextStyle(
                     fontSize: 7,
-                    color: PassportPdfColors.accent,
+                    color: PassportPdfColors.muted,
                   ),
                 ),
-              ),
               pw.Text(
                 'Page ${context.pageNumber} of ${context.pagesCount}',
                 style: const pw.TextStyle(
@@ -289,9 +308,13 @@ class _PdfFooter extends pw.StatelessWidget {
           ),
           pw.SizedBox(height: 3),
           pw.Text(
-            'Generated ${data.generatedDateLabel}. '
-            'This document is a snapshot of the athlete\'s PROOF Physical Passport '
-            'at the time of generation. View the live profile for the latest record.',
+            data.publicUrl != null
+                ? 'Generated ${data.generatedDateLabel}. '
+                    'This document is a snapshot of the athlete\'s PROOF Physical Passport '
+                    'at the time of generation. View the live profile for the latest record.'
+                : 'Generated ${data.generatedDateLabel}. '
+                    'This document is a PDF snapshot of the athlete\'s PROOF Physical Passport '
+                    'at the time of generation. A public web profile is not configured for this build.',
             style: const pw.TextStyle(
               fontSize: 6.5,
               color: PassportPdfColors.lightMuted,

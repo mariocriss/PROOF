@@ -915,7 +915,7 @@ class GymQuickActionsRow extends StatelessWidget {
           const SizedBox(width: 10),
           GymQuickActionTile(
             icon: Icons.person_add_outlined,
-            label: 'Invite Coach',
+            label: 'Add coaches',
             onTap: onInviteCoach,
           ),
           const SizedBox(width: 10),

@@ -367,11 +367,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AccountScreen(),
       ),
       GoRoute(
-        path: '/notifications',
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const NotificationsScreen(),
-      ),
-      GoRoute(
         path: '/coach/verification-queue',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const CoachVerificationQueueScreen(),

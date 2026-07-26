@@ -1,4 +1,12 @@
-storePassword=your-store-password
-keyPassword=your-key-password
-keyAlias=upload
-storeFile=upload-keystore.jks
+# Copy to android/key.properties (gitignored) and fill in locally.
+# Never commit android/key.properties or any .jks / .keystore file.
+#
+# storeFile: prefer an absolute path outside the Git repo.
+# On Windows, use forward slashes (Gradle-friendly), e.g.:
+#   C:/Users/mario/proof-signing/proof-upload.jks
+# Relative paths are resolved from the android/ directory.
+
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=proof-upload
+storeFile=C:/Users/mario/proof-signing/proof-upload.jks

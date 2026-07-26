@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delete Account — PROOF</title>
+  <meta name="description" content="How to delete your PROOF account and what data is removed or retained.">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/">PROOF<span>Physical Identity Platform</span></a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/">Home</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="/delete-account/" aria-current="page">Delete account</a>
+        <a href="/support/">Support</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <article class="prose">
+      <h1>Delete your PROOF account</h1>
+      <p class="meta">Google Play account-deletion information for the PROOF Android app.</p>
+
+      <div class="note" style="margin-bottom:1.5rem">
+        Account deletion is performed <strong>inside the PROOF Android app</strong>.
+        This page explains the process for store reviewers and users. There is no
+        separate web login for deletion in this launch.
+      </div>
+
+      <h2>How to delete your account in the app</h2>
+      <ol>
+        <li>Open PROOF and sign in with the account you want to delete.</li>
+        <li>Go to <strong>Account</strong> (from More / settings paths in the app).</li>
+        <li>Tap <strong>Delete account</strong> and confirm.</li>
+        <li>Enter your password when asked (re-authentication).</li>
+        <li>Wait for deletion to finish. On success you return to the signed-out registration screen.</li>
+      </ol>
+      <p>
+        If Firestore cleanup fails, your sign-in remains active, you see a friendly
+        error, and you can retry. The app does not delete Firebase Authentication
+        until required data cleanup succeeds.
+      </p>
+
+      <h2>What is deleted</h2>
+      <ul>
+        <li>Your Firebase Authentication account (after cleanup succeeds).</li>
+        <li>Your user profile, identity, skills, proofs, timeline, public profile, and coach profile (if any).</li>
+        <li>Your personal and coach handle reservations (handles can be reused).</li>
+        <li>Friendships, friend requests, blocks, and coach relationship documents you participate in.</li>
+        <li>Verification requests where you are the athlete or the coach.</li>
+        <li>Reports you submitted about others.</li>
+        <li>Your gym memberships. If you <em>created</em> a gym, that gym is closed (memberships, gym handle, and gym document removed) so it is not left without an owner.</li>
+      </ul>
+
+      <h2>What may be retained</h2>
+      <h3>Moderation reports about you</h3>
+      <p>
+        Reports other users filed about your account may be retained for trust and
+        safety. Your public handle on those reports is replaced with a deleted marker
+        (<code>[deleted]</code>). An internal opaque user id may remain so reports can
+        be correlated. Email, display name, avatar, and profile pages are not kept on
+        the report. Retention target: up to 24 months or until an operator closes the
+        report, whichever comes first.
+      </p>
+      <h3>Historical coach verification on other athletes’ proofs</h3>
+      <p>
+        If you were a coach, other athletes’ proofs are not deleted. Live coach account
+        links are cleared and the proof can show that it was verified by a coach whose
+        account is no longer available. The historical verification status is preserved.
+      </p>
+
+      <h2>Timing</h2>
+      <p>
+        Deletion typically completes within seconds for normal accounts. Larger
+        histories may take longer. Completion means you are signed out and cannot
+        sign in with that account.
+      </p>
+
+      <h2>Need help?</h2>
+      <p>
+        Contact <a href="mailto:mario-zderic@hotmail.com">mario-zderic@hotmail.com</a> if deletion fails
+        repeatedly after you are online and using the latest app build.
+      </p>
+      <p>
+        Related: <a href="/privacy/">Privacy Policy</a>
+      </p>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <div>© PROOF</div>
+      <nav aria-label="Footer">
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="/delete-account/">Delete account</a>
+        <a href="/support/">Support</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

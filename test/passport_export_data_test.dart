@@ -108,7 +108,7 @@ void main() {
       now: () => now,
     );
 
-    expect(data.publicUrl, 'https://proof.app/passport/mario');
+    expect(data.publicUrl, isNull);
     expect(data.displayName, 'Mario Rossi');
     expect(data.totalSkills, 2);
     expect(data.totalProofs, 3);
@@ -229,6 +229,6 @@ void main() {
     final encoded = data.toString();
     expect(encoded.toLowerCase().contains('email'), isFalse);
     expect(encoded.toLowerCase().contains('phone'), isFalse);
-    expect(data.publicUrl.startsWith('https://proof.app/passport/'), isTrue);
+    expect(data.publicUrl, isNull);
   });
 }

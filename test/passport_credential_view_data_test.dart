@@ -97,7 +97,7 @@ void main() {
       skills: skills,
       proofs: proofs,
       timeline: timeline,
-      publicUrl: 'https://proof.app/passport/mario',
+      publicUrl: null,
       now: () => now,
     );
 
@@ -106,6 +106,6 @@ void main() {
     expect(data.coachVerifiedCount, 1);
     expect(data.trustIndicators.mostConsistent, 'Push-ups');
     expect(data.trustIndicators.latestMilestone, 'Reached Developing');
-    expect(data.publicUrl, contains('mario'));
+    expect(data.publicUrl, isNull);
   });
 }

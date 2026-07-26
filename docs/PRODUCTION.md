@@ -8,64 +8,76 @@ PROOF launches on the **Firebase free (Spark) plan** with:
 
 - Firebase Auth
 - Cloud Firestore
-- **No Firebase Storage** (photo uploads deferred)
+- Firebase Crashlytics (release)
+- **No** Firebase Storage, Analytics, or FCM in this build
 
-Set `AppFeatures.cloudStorageEnabled = false` in `lib/core/constants/app_features.dart` until Storage is enabled.
+Set feature flags in `lib/core/constants/app_features.dart` and URLs in
+`lib/core/constants/app_urls.dart`.
+
+**Do not** use third-party `proof.app` URLs. Leave `AppUrls` null until you own
+a domain.
 
 ---
 
-## Completed in codebase
+## Docs for store / legal / closed testing
 
-### Security
-- [x] Firestore rules hardened (handle ownership, gym handle ownership, relationship field immutability)
-- [x] `userReports` collection with create/read rules
-- [x] Firestore rules unit tests for relationships
-- [x] Participant-scoped relationship queries (no unsafe `whereIn`)
-
-### Auth & account
-- [x] Password reset (`Forgot password?` on login)
-- [x] Email verification sent on registration + resend from Account
-- [x] Account deletion with password re-authentication (Auth deleted **only after** Firestore cleanup)
-- [x] Firestore cleanup covers relationships, verification requests, reporter-owned reports, public profile, skills, proofs, timeline, handles, gym memberships, and owned gyms
-- [x] Account deletion rules + orchestration unit tests (see `docs/ACCOUNT_DELETION.md`)
-
-### Account deletion (privacy)
-
-Full map: [`docs/ACCOUNT_DELETION.md`](ACCOUNT_DELETION.md)
-
-| Category | Behavior |
+| Doc | Purpose |
 |---|---|
-| Deleted | User profile, identity, skills, proofs, timeline, handles, coach profile, public profile, both sides of relationships/blocks/friend requests, own verification requests (athlete or coach), reports **submitted by** the user, own gym memberships, gyms the user **created** (all memberships at that gym + gym handle + gym) |
-| Retained | Reports **about** the user (moderation), with handle replaced by `[deleted]` and only the opaque `reportedUserId` kept; other athletes' historically coach-verified proofs with live coach UIDs cleared and label “Verified by coach — account no longer available” |
-| Timing | Seconds for typical accounts; batched subcollection deletes + collection-group coach anonymization |
-| Failure | Auth kept; friendly error; release Crashlytics `account_deletion_failed` with stage + error code only; user can retry |
-| Gym ownership | Created gyms are **closed** (not left ownerless) |
+| [`docs/DATA_INVENTORY.md`](DATA_INVENTORY.md) | Factual data map for Privacy Policy + Play Data safety |
+| [`docs/ACCOUNT_DELETION.md`](ACCOUNT_DELETION.md) | Deletion behavior |
+| [`docs/ANDROID_SIGNING.md`](ANDROID_SIGNING.md) | Keystore + Play App Signing |
+| [`docs/SIGNING_PREUPLOAD_CHECKLIST.md`](SIGNING_PREUPLOAD_CHECKLIST.md) | Pre-upload signing checks |
+| [`docs/LAUNCH_URLS_CHECKLIST.md`](LAUNCH_URLS_CHECKLIST.md) | Values to set in `AppUrls` |
+| [`docs/FIREBASE_DEPLOYMENT.md`](FIREBASE_DEPLOYMENT.md) | Rules/indexes deploy verification |
+| [`docs/BUNDLE_SIZE_AUDIT.md`](BUNDLE_SIZE_AUDIT.md) | ~65 MB AAB breakdown |
+| [`docs/CLOSED_TESTING_PLAN.md`](CLOSED_TESTING_PLAN.md) | Device smoke tests |
+| [`docs/PLAY_CONSOLE_CHECKLIST.md`](PLAY_CONSOLE_CHECKLIST.md) | Console tasks by owner type |
+| [`docs/CLOSED_TEST_FEEDBACK.md`](CLOSED_TEST_FEEDBACK.md) | Tester feedback + log |
+| [`docs/LAUNCHER_ICONS.md`](LAUNCHER_ICONS.md) | Icon asset requirements |
+| [`docs/MERGED_MANIFEST_PERMISSIONS.md`](MERGED_MANIFEST_PERMISSIONS.md) | Permission audit |
 
-**Deploy note:** publish updated `firestore.rules` before relying on in-app deletion in production.
+---
 
-**Follow-up (not on Spark):** callable Cloud Function deletion job for large accounts / mid-flight kills — designed in `docs/ACCOUNT_DELETION.md`, not implemented as an admin client path.
-### Privacy & legal
-- [x] Terms acceptance checkbox at registration
-- [x] In-app Privacy Policy and Terms screens + external links
-- [x] Privacy settings screen (`isPublic` / discoverability toggle)
-- [x] Links from Account and Settings
+## Completed in codebase (launch blockers addressed in-app)
 
-### Trust & safety
-- [x] Report user from any profile (not only friends)
-- [x] Block user (existing)
+### URLs & passport
+- [x] Central `AppUrls` configuration (all null until you supply owned HTTPS URLs)
+- [x] Public web passport / QR / share links disabled while passport base URL unset
+- [x] PDF export remains available as an offline snapshot
 
-### Storage-free launch
-- [x] Removed `firebase_storage` dependency
-- [x] Proof media upload disabled with user-facing message
-- [x] Avatar/gym logo uploads skipped until Storage is enabled
+### Legal (draft only — not legal approval)
+- [x] In-app Privacy/Terms drafts aligned to Auth, Firestore, Crashlytics, no messaging/Storage/Analytics
+- [x] Visible hosted-URL placeholders in legal screens
+- [x] Data inventory document for counsel / Play Console
 
-### Operations
-- [x] Firebase Crashlytics wired in `main.dart` (release builds only)
-- [x] CI: `flutter test` + Firestore rules tests
+### Signing
+- [x] Release builds fail clearly without `android/key.properties` (no debug fallback)
+- [x] `key.properties` / `.jks` / `.keystore` gitignored
 
-### Android release preparation
-- [x] Release signing scaffold (`key.properties.example` + conditional signing in Gradle)
-- [x] App display name set to `PROOF`
+### Icons
+- [x] Flutter default logo replaced with temporary adaptive + legacy placeholders
+- [x] Final asset checklist under `branding/launcher/`
+
+### Incomplete UI hidden
+- [x] Notification settings removed (no FCM)
+- [x] Empty Membership Settings row removed
+- [x] Coach invite copy is honest (search by gym handle; no “coming soon” fake flow)
+
+### Security / account
+- [x] Account deletion with reauth; Auth deleted only after Firestore cleanup
+- [x] Firestore rules + tests for deletion anonymization
+
+---
+
+## You must still provide / do
+
+1. **Owned domain** + hosted Privacy Policy, Terms, optional account-deletion page, support email → set in `AppUrls`
+2. **Legal review** of hosted documents (in-app drafts are not approval)
+3. **Upload keystore** locally (`docs/ANDROID_SIGNING.md`) + Play App Signing
+4. **Final launcher art** (`docs/LAUNCHER_ICONS.md`)
+5. Publish `firestore.rules` + indexes
+6. Complete Play Console Data safety using `docs/DATA_INVENTORY.md`
+7. Closed testing on real devices
 
 ---
 
@@ -73,41 +85,39 @@ Full map: [`docs/ACCOUNT_DELETION.md`](ACCOUNT_DELETION.md)
 
 ### Firebase Console
 1. Publish `firestore.rules` and `firestore.indexes.json`
-2. Enable **Email/Password** auth (already used)
-3. Enable **Crashlytics** in Firebase Console after first release build
-4. Optional: enable **App Check** when ready
+2. Enable Email/Password auth
+3. Enable Crashlytics after first release build
 
-### Legal (hosted pages required)
-1. Publish Privacy Policy at `https://proof.app/privacy`
-2. Publish Terms of Service at `https://proof.app/terms`
-3. Update URLs in `lib/core/constants/legal_constants.dart` if domains differ
+### Legal (hosted pages required for production listing)
+1. Host Privacy Policy and Terms on **your** domain
+2. Set URLs in `lib/core/constants/app_urls.dart`
+3. Optionally enable public passport base URL when a web passport exists
 
 ### Android release
-1. Copy `android/key.properties.example` to `android/key.properties`
-2. Generate upload keystore
-3. Build: `flutter build appbundle --release`
-4. Upload to Google Play Console
+1. Copy `android/key.properties.example` → `android/key.properties`
+2. Generate upload keystore (see `docs/ANDROID_SIGNING.md`)
+3. `flutter build appbundle --release`
+4. Upload to Play Console
 
 ---
 
 ## Remaining launch tasks
 
-### Must-have
-- [ ] Host Privacy Policy and Terms at live URLs
-- [ ] Generate Android release keystore and first Play Console upload
-- [ ] Deploy Firestore indexes to production
-- [ ] Publish updated Firestore rules (account deletion deletes for verificationRequests / reporter userReports / gym creator membership cleanup)
-- [ ] Test full account deletion on a real device (see `docs/ACCOUNT_DELETION.md`)
+### Must-have (owner actions)
+- [ ] Host Privacy Policy and Terms on an owned domain; configure `AppUrls`
+- [ ] Generate Android upload keystore and first Play Console upload
+- [ ] Deploy Firestore indexes and rules to production
+- [ ] Replace placeholder launcher icons with approved brand art
+- [ ] Test full account deletion on a real device
 - [ ] Test password reset and email verification end-to-end
+- [ ] Complete Play Data safety form
 
 ### Should-have
 - [ ] Firebase App Check
-- [ ] Staging Firebase project separate from production
-- [ ] Push notifications (FCM)
-- [ ] Public passport web page or deep links for `proof.app/passport/{handle}`
+- [ ] Staging Firebase project
+- [ ] FCM push notifications (then restore settings UI)
+- [ ] Public passport web + deep links (then set `publicPassportBaseUrl`)
 - [ ] Data export (GDPR)
 
-### Deferred (requires paid Firebase / Storage)
-- [ ] Firebase Storage rules + avatar uploads
-- [ ] Proof photo attachments
-- [ ] Gym logo uploads
+### Deferred (paid Firebase / Storage)
+- [ ] Firebase Storage rules + avatar / proof / gym logo uploads

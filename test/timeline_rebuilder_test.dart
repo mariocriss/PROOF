@@ -6,7 +6,6 @@ import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
-import 'package:proof/shared/models/timeline_event.dart';
 
 void main() {
   final base = DateTime(2025, 1, 1);

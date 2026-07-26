@@ -859,6 +859,7 @@ class _GymProfileOnboardingScreenState
   }
 
   Future<void> _pickLogo() async {
+    if (!AppFeatures.cloudStorageEnabled) return;
     final image = await ImagePicker().pickImage(
       source: ImageSource.gallery,
       maxWidth: 512,
@@ -955,23 +956,31 @@ class _GymProfileOnboardingScreenState
             ],
             Center(
               child: GestureDetector(
-                onTap: _pickLogo,
+                onTap: AppFeatures.cloudStorageEnabled ? _pickLogo : null,
                 child: CircleAvatar(
                   radius: 44,
                   backgroundColor: AppColors.surface,
                   backgroundImage:
                       _logoFile != null ? FileImage(_logoFile!) : null,
                   child: _logoFile == null
-                      ? const Icon(Icons.add_a_photo, color: AppColors.inkMuted)
+                      ? Icon(
+                          AppFeatures.cloudStorageEnabled
+                              ? Icons.add_a_photo
+                              : Icons.apartment_outlined,
+                          color: AppColors.inkMuted,
+                        )
                       : null,
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            const Center(
+            Center(
               child: Text(
-                'Gym logo (optional)',
-                style: TextStyle(color: AppColors.inkMuted, fontSize: 13),
+                AppFeatures.cloudStorageEnabled
+                    ? 'Gym logo (optional)'
+                    : 'Gym logo uploads are disabled in this launch build',
+                style: const TextStyle(color: AppColors.inkMuted, fontSize: 13),
+                textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 24),

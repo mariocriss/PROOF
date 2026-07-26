@@ -44,5 +44,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Release signing (never commit)
+/android/key.properties
+*.jks
+*.keystore
+**/upload-keystore.*
+
 # Firestore rules unit tests
 firestore-rules-test/node_modules/

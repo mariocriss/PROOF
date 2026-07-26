@@ -1,13 +1,22 @@
+import 'package:proof/core/constants/app_urls.dart';
+
 /// Legal document routes and optional hosted URLs.
+///
+/// Hosted URLs come from [AppUrls]. In-app documents are drafts for the build
+/// and are not a substitute for reviewed hosted legal pages required by stores.
 class LegalConstants {
   LegalConstants._();
 
   static const String privacyPolicyRoute = '/privacy-policy';
   static const String termsOfServiceRoute = '/terms';
 
-  /// Optional hosted copies for store listings or email links.
-  static const String privacyPolicyUrl = 'https://proof.app/privacy';
-  static const String termsOfServiceUrl = 'https://proof.app/terms';
+  static String? get privacyPolicyUrl => AppUrls.privacyPolicyUrl;
 
-  static const String supportEmail = 'support@proof.app';
+  static String? get termsOfServiceUrl => AppUrls.termsOfServiceUrl;
+
+  static String? get supportEmail => AppUrls.supportEmail;
+
+  static String get supportContactLabel => AppUrls.hasSupportEmail
+      ? AppUrls.supportEmail!
+      : 'Support contact is not available in this build';
 }

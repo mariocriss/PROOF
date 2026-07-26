@@ -1,3 +1,5 @@
+import 'package:proof/core/constants/app_urls.dart';
+
 class AppConstants {
   AppConstants._();
 
@@ -9,7 +11,7 @@ class AppConstants {
   static const int bioMaxLength = 280;
   static const int displayNameMaxLength = 64;
 
-  static const String passportBaseUrl = 'https://proof.app/passport';
-
-  static String passportUrl(String handle) => '$passportBaseUrl/$handle';
+  /// Public passport URL when web hosting is configured; otherwise `null`.
+  static String? passportUrl(String handle) =>
+      AppUrls.passportUrlForHandle(handle);
 }

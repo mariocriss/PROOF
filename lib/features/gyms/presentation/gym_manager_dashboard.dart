@@ -138,7 +138,7 @@ class _GymManagerDashboardScreenState
           _OverviewTab(
             data: data,
             onNavigate: _goToTab,
-            onInviteCoach: () => _showInviteCoach(context),
+            onInviteCoach: () => _showInviteCoach(context, gym.handle),
             membershipsLoading: membershipsLoading,
             membershipsError: membershipsError,
             onRetryMemberships: () => ref.invalidate(
@@ -151,7 +151,10 @@ class _GymManagerDashboardScreenState
             onSubTabChanged: (i) => setState(() => _requestsSubTab = i),
           ),
           _MembersTab(data: data),
-          _CoachesTab(data: data, onInvite: () => _showInviteCoach(context)),
+          _CoachesTab(
+            data: data,
+            onInvite: () => _showInviteCoach(context, gym.handle),
+          ),
           _MoreTab(
             gymId: widget.gymId,
             data: data,
@@ -203,14 +206,14 @@ class _GymManagerDashboardScreenState
     );
   }
 
-  void _showInviteCoach(BuildContext context) {
+  void _showInviteCoach(BuildContext context, String gymHandle) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Invite Coach'),
-        content: const Text(
-          'Share your gym handle so coaches can find you and request membership. '
-          'Direct coach invites are coming soon.',
+        title: const Text('Add coaches'),
+        content: Text(
+          'Coaches can search for @$gymHandle in the app and request membership. '
+          'Approve requests from the Requests tab.',
         ),
         actions: [
           TextButton(
@@ -681,7 +684,7 @@ class _CoachesTabState extends ConsumerState<_CoachesTab> {
                         title: 'No coaches yet',
                         description: 'Approved coaches will appear here.',
                         action: ProofButton(
-                          label: 'Invite Coach',
+                          label: 'Add coaches',
                           onPressed: widget.onInvite,
                         ),
                       ),
@@ -745,15 +748,16 @@ class _MoreTab extends ConsumerWidget {
                 ),
                 MoreMenuRow(
                   icon: Icons.mail_outline,
-                  title: 'Invite Coach',
-                  subtitle: 'Share your gym with coaches',
+                  title: 'Add coaches',
+                  subtitle: 'Coaches request via your gym handle',
                   onTap: () {
                     showDialog<void>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('Invite Coach'),
+                        title: const Text('Add coaches'),
                         content: Text(
-                          'Coaches can search for @${data.gym.handle} and request membership.',
+                          'Coaches can search for @${data.gym.handle} and request membership. '
+                          'Approve requests from the Requests tab.',
                         ),
                         actions: [
                           TextButton(
@@ -764,12 +768,6 @@ class _MoreTab extends ConsumerWidget {
                       ),
                     );
                   },
-                ),
-                MoreMenuRow(
-                  icon: Icons.admin_panel_settings_outlined,
-                  title: 'Membership Settings',
-                  subtitle: 'Review requests from the Requests tab',
-                  onTap: () {},
                 ),
               ],
             ),
@@ -817,12 +815,6 @@ class _MoreTab extends ConsumerWidget {
                       ? user.email
                       : 'Manage your account and privacy',
                   onTap: () => context.push('/account'),
-                ),
-                MoreMenuRow(
-                  icon: Icons.notifications_outlined,
-                  title: 'Notifications',
-                  subtitle: 'Manage alerts and updates',
-                  onTap: () => context.push('/notifications'),
                 ),
                 MoreMenuRow(
                   icon: Icons.lock_outline,

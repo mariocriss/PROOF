@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proof/core/constants/app_features.dart';
+import 'package:proof/core/constants/app_urls.dart';
 import 'package:proof/features/passport/domain/passport_credential_view_data.dart';
 import 'package:proof/features/passport/domain/passport_export_data.dart';
 import 'package:proof/features/passport/presentation/passport_pdf_service.dart';
@@ -17,7 +19,12 @@ class PassportShareService {
 
   static bool get isPdfExportInProgress => _pdfExportInProgress;
 
+  static bool get canSharePublicWebLink => AppFeatures.publicWebPassportEnabled;
+
   static Future<void> shareLink(PassportCredentialViewData data) async {
+    if (!canSharePublicWebLink || data.publicUrl == null) {
+      return;
+    }
     await SharePlus.instance.share(
       ShareParams(
         text: _shareMessage(data),
@@ -27,7 +34,9 @@ class PassportShareService {
   }
 
   static Future<void> copyLink(PassportCredentialViewData data) async {
-    await Clipboard.setData(ClipboardData(text: data.publicUrl));
+    final url = data.publicUrl;
+    if (url == null || url.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: url));
   }
 
   /// Generates a professional multi-page Physical Passport PDF,
@@ -75,7 +84,6 @@ class PassportShareService {
         coachName: coachName,
       );
 
-      // Validate export mapper privacy invariants before generating.
       _assertNoPrivateLeak(exportData);
 
       if (!context.mounted) return;
@@ -90,12 +98,8 @@ class PassportShareService {
         final navigator = Navigator.of(context, rootNavigator: true);
         if (navigator.canPop()) navigator.pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Could not generate PDF. Please try again.'),
-            action: SnackBarAction(
-              label: 'Details',
-              onPressed: () {},
-            ),
           ),
         );
       }
@@ -128,6 +132,12 @@ class PassportShareService {
   }
 
   static void showQrCode(BuildContext context, PassportCredentialViewData data) {
+    final url = data.publicUrl;
+    if (!canSharePublicWebLink || url == null) {
+      showPublicPassportUnavailable(context);
+      return;
+    }
+
     showDialog<void>(
       context: context,
       builder: (context) {
@@ -139,13 +149,13 @@ class PassportShareService {
               mainAxisSize: MainAxisSize.min,
               children: [
                 QrImageView(
-                  data: data.publicUrl,
+                  data: url,
                   size: 200,
                   backgroundColor: Colors.white,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  data.publicUrl,
+                  url,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -160,6 +170,22 @@ class PassportShareService {
           ],
         );
       },
+    );
+  }
+
+  static void showPublicPassportUnavailable(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Public link unavailable'),
+        content: const Text(AppUrls.publicPassportUnavailableMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -179,27 +205,29 @@ class PassportShareService {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: const Icon(Icons.link),
-                title: const Text('Copy link'),
-                onTap: () async {
-                  await copyLink(data);
-                  if (sheetContext.mounted) {
+              if (canSharePublicWebLink && data.publicUrl != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.link),
+                  title: const Text('Copy link'),
+                  onTap: () async {
+                    await copyLink(data);
+                    if (sheetContext.mounted) {
+                      Navigator.pop(sheetContext);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Passport link copied')),
+                      );
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: const Text('Share passport'),
+                  onTap: () async {
                     Navigator.pop(sheetContext);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Passport link copied')),
-                    );
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: const Text('Share passport'),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  await shareLink(data);
-                },
-              ),
+                    await shareLink(data);
+                  },
+                ),
+              ],
               ListTile(
                 leading: const Icon(Icons.picture_as_pdf_outlined),
                 title: const Text('Download PDF'),
@@ -225,18 +253,20 @@ class PassportShareService {
   }
 
   static String _shareMessage(PassportCredentialViewData data) {
+    final url = data.publicUrl ?? '';
     return 'My PROOF Physical Identity Passport\n\n'
         '${data.identity.displayName}\n'
         '${data.overallConfidence.label} · '
         '${data.proofsCount} proofs · '
         '${data.skillsCount} skills\n\n'
-        '${data.publicUrl}';
+        '$url';
   }
 
   static void _assertNoPrivateLeak(PassportExportData data) {
-    // Lightweight runtime guard for accidental private-field leakage.
-    // Export model has no email/phone/firebase id fields by design.
-    assert(!data.publicUrl.contains('firebase'), 'Unexpected firebase URL');
-    assert(data.handle.isNotEmpty, 'Handle required for public passport URL');
+    final url = data.publicUrl;
+    if (url != null) {
+      assert(!url.contains('firebase'), 'Unexpected firebase URL');
+    }
+    assert(data.handle.isNotEmpty, 'Handle required for passport export');
   }
 }

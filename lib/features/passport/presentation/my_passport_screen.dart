@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:proof/core/constants/app_constants.dart';
+import 'package:proof/core/constants/app_features.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/features/passport/domain/passport_credential_view_data.dart';
 import 'package:proof/features/passport/presentation/passport_share_service.dart';
@@ -335,7 +336,10 @@ class _SharePassportCardState extends ConsumerState<_SharePassportCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Share your Physical Identity with coaches, employers or partners.',
+            AppFeatures.publicWebPassportEnabled
+                ? 'Share your Physical Identity with coaches, employers or partners.'
+                : 'Export a PDF snapshot of your Physical Identity. '
+                    'Public web links and QR codes are unavailable until an owned domain is configured.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.inkSecondary,
                   height: 1.4,
@@ -344,23 +348,25 @@ class _SharePassportCardState extends ConsumerState<_SharePassportCard> {
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(
-                child: _ShareTile(
-                  icon: Icons.qr_code_2_outlined,
-                  label: 'QR Code',
-                  onTap: () =>
-                      PassportShareService.showQrCode(context, widget.data),
+              if (AppFeatures.publicWebPassportEnabled) ...[
+                Expanded(
+                  child: _ShareTile(
+                    icon: Icons.qr_code_2_outlined,
+                    label: 'QR Code',
+                    onTap: () =>
+                        PassportShareService.showQrCode(context, widget.data),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _ShareTile(
-                  icon: Icons.link,
-                  label: 'Share Link',
-                  onTap: () => PassportShareService.shareLink(widget.data),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ShareTile(
+                    icon: Icons.link,
+                    label: 'Share Link',
+                    onTap: () => PassportShareService.shareLink(widget.data),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: _ShareTile(
                   icon: Icons.download_outlined,

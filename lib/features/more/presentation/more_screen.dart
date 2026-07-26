@@ -230,12 +230,6 @@ class MoreScreen extends ConsumerWidget {
                     onTap: () => context.push('/account'),
                   ),
                   MoreMenuRow(
-                    icon: Icons.notifications_outlined,
-                    title: 'Notifications',
-                    subtitle: 'Manage your notifications',
-                    onTap: () => context.push('/notifications'),
-                  ),
-                  MoreMenuRow(
                     icon: Icons.help_outline,
                     title: 'Help',
                     subtitle: 'Get help and contact support',

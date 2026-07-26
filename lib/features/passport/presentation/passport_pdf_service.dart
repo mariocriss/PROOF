@@ -80,7 +80,8 @@ class PassportPdfService {
       ShareParams(
         files: [XFile(file.path, mimeType: 'application/pdf')],
         subject: '${data.displayName} — PROOF Physical Passport',
-        text: 'PROOF Physical Passport for ${data.displayName}\n${data.publicUrl}',
+        text:
+            'PROOF Physical Passport for ${data.displayName}${data.publicUrl != null ? '\n${data.publicUrl}' : ''}',
       ),
     );
   }

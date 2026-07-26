@@ -6,7 +6,6 @@ import 'package:proof/shared/models/performance_type.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
-import 'package:proof/shared/models/skill_status.dart';
 
 void main() {
   final now = DateTime(2026, 7, 8);

@@ -15,6 +15,16 @@ val hasReleaseKeystore = keystorePropertiesFile.exists().also { exists ->
     }
 }
 
+fun missingReleaseSigningMessage(): String {
+    return """
+        Release signing is not configured.
+        Create android/key.properties from android/key.properties.example
+        and point storeFile at your upload keystore (.jks).
+        See docs/ANDROID_SIGNING.md.
+        Debug builds do not require this file.
+    """.trimIndent()
+}
+
 android {
     namespace = "com.proof.proof"
     compileSdk = flutter.compileSdkVersion
@@ -38,7 +48,7 @@ android {
             create("release") {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
             }
         }
@@ -46,13 +56,33 @@ android {
 
     buildTypes {
         release {
+            if (!hasReleaseKeystore) {
+                // Fail clearly instead of silently signing with the debug key.
+                logger.error(missingReleaseSigningMessage())
+            }
             signingConfig = if (hasReleaseKeystore) {
                 signingConfigs.getByName("release")
             } else {
-                signingConfigs.getByName("debug")
+                null
             }
             isMinifyEnabled = false
             isShrinkResources = false
+        }
+    }
+}
+
+// Hard-fail release assemble/bundle tasks when signing config is missing.
+afterEvaluate {
+    if (!hasReleaseKeystore) {
+        tasks.matching {
+            it.name.startsWith("assembleRelease") ||
+                it.name.startsWith("bundleRelease") ||
+                it.name == "assembleRelease" ||
+                it.name == "bundleRelease"
+        }.configureEach {
+            doFirst {
+                throw GradleException(missingReleaseSigningMessage())
+            }
         }
     }
 }
