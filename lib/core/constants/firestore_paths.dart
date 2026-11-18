@@ -7,6 +7,7 @@ class FirestorePaths {
   static const String skills = 'skills';
   static const String proofs = 'proofs';
   static const String timeline = 'timeline';
+  static const String experienceReceipts = 'experienceReceipts';
   static const String relationships = 'relationships';
   static const String verificationRequests = 'verificationRequests';
   static const String coachProfiles = 'coachProfiles';
@@ -29,4 +30,7 @@ class FirestorePaths {
 
   static String timelineCollection(String userId) =>
       '$users/$userId/$timeline';
+
+  static String experienceReceiptsCollection(String userId) =>
+      '$users/$userId/$experienceReceipts';
 }

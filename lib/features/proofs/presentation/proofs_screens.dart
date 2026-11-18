@@ -11,6 +11,10 @@ import 'package:proof/core/utils/result_normalizer.dart';
 import 'package:proof/core/utils/skill_display_name.dart';
 import 'package:proof/core/utils/validators.dart';
 import 'package:proof/features/skills/domain/skill_dropdown.dart';
+import 'package:proof/features/social/application/social_providers.dart';
+import 'package:proof/features/social/presentation/widgets/proof_share_control.dart';
+import 'package:proof/features/social/presentation/widgets/share_with_others_field.dart';
+import 'package:proof/features/experience/application/experience_providers.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
 import 'package:proof/shared/models/skill_model.dart';
@@ -50,9 +54,7 @@ class ProofsScreen extends ConsumerWidget {
           if (proofs.isEmpty) {
             return EmptyState(
               title: 'No proofs yet',
-              message:
-                  'Every skill starts with a single proof.\n'
-                  'Document your first result to begin building your physical identity.',
+              message: 'No proofs here yet. The page is ready when you are.',
               action: ProofButton(
                 label: 'Add First Proof',
                 onPressed: () => context.push('/proofs/add'),
@@ -183,6 +185,8 @@ class _ProofCard extends ConsumerWidget {
             const SizedBox(height: 8),
             Text(proof.notes, style: Theme.of(context).textTheme.bodyMedium),
           ],
+          const SizedBox(height: 12),
+          ProofShareControl(proof: proof),
         ],
       ),
     );
@@ -218,6 +222,8 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
   String? _selectedCoachId;
   String? _selectedGymId;
   bool _isLoading = false;
+  bool _shareWithOthers = ShareWithOthersField.initialValue;
+  String? _shareGymId;
   bool _didPrefetchCoaches = false;
 
   @override
@@ -306,6 +312,21 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
       return;
     }
 
+    if (_shareWithOthers) {
+      final memberships =
+          ref.read(userGymMembershipsProvider).valueOrNull ?? const [];
+      final shareGyms = approvedAthleteShareGymIds(memberships);
+      if (shareGyms.isEmpty) {
+        setState(() => _shareWithOthers = ShareWithOthersField.initialValue);
+      } else if (shareGyms.length > 1 &&
+          (_shareGymId == null || !shareGyms.contains(_shareGymId))) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Choose which gym to share with.')),
+        );
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -348,14 +369,66 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
         variantName: skill.variantName,
       );
 
-      await ref
-          .read(firestoreServiceProvider)
-          .addProofWithVerification(
-            proof: proof,
-            coachId: _selectedCoachId,
-            gymId: _selectedGymId,
-            verificationMessage: _notesController.text.trim(),
-          );
+      final service = ref.read(firestoreServiceProvider);
+      await service.addProofWithVerification(
+        proof: proof,
+        coachId: _selectedCoachId,
+        gymId: _selectedGymId,
+        verificationMessage: _notesController.text.trim(),
+      );
+      if (_shareWithOthers) {
+        final memberships =
+            ref.read(userGymMembershipsProvider).valueOrNull ?? const [];
+        final shareGyms = approvedAthleteShareGymIds(memberships);
+        final shareGymId = shareGyms.length == 1
+            ? shareGyms.first
+            : _shareGymId;
+        if (shareGymId != null && shareGyms.contains(shareGymId)) {
+          try {
+            await service.shareProofWithGym(
+              userId: user.uid,
+              proofId: proof.id,
+              gymId: shareGymId,
+            );
+          } catch (error) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Your proof was saved privately. ${'$error'.replaceFirst('Bad state: ', '')}',
+                  ),
+                ),
+              );
+            }
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _shareWithOthers = ShareWithOthersField.initialValue;
+          _shareGymId = null;
+        });
+      }
+      if (!mounted) return;
+
+      try {
+        final trigger = ref.read(experienceTriggerServiceProvider);
+        final firestore = ref.read(firestoreProvider);
+        final snap = await firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('proofs')
+            .limit(2)
+            .get();
+        final countAfter = snap.docs.length;
+        await trigger.onProofCreated(
+              userId: user.uid,
+              proof: proof,
+              totalProofCountAfterCreate: countAfter,
+              skillName: skill.name,
+            );
+      } catch (_) {}
+
       if (!mounted) return;
 
       if (widget.isFirstProof) {
@@ -638,6 +711,21 @@ class _AddProofScreenState extends ConsumerState<AddProofScreen> {
                       label: 'Personal notes',
                       hint: 'Optional context about this evidence',
                       maxLines: 3,
+                    ),
+                    const SizedBox(height: 8),
+                    ShareWithOthersField(
+                      value: _shareWithOthers,
+                      enabled: hasApprovedAthleteMembership,
+                      gymIds: approvedAthleteShareGymIds(memberships),
+                      selectedGymId: _shareGymId,
+                      onChanged: _isLoading
+                          ? null
+                          : (value) {
+                              setState(() => _shareWithOthers = value);
+                            },
+                      onGymChanged: (gymId) {
+                        setState(() => _shareGymId = gymId);
+                      },
                     ),
                     if (!AppFeatures.cloudStorageEnabled) ...[
                       const SizedBox(height: 16),

@@ -14,6 +14,9 @@ import 'package:proof/core/utils/timeline_rebuilder.dart';
 import 'package:proof/features/people/domain/friend_request_policy.dart';
 import 'package:proof/features/people/domain/people_relationship_queries.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_merge.dart';
+import 'package:proof/features/social/domain/gym_activity.dart';
+import 'package:proof/features/social/domain/social_comment.dart';
+import 'package:proof/features/social/domain/social_comment_policy.dart';
 import 'package:proof/shared/models/physical_identity.dart';
 import 'package:proof/shared/models/proof_model.dart';
 import 'package:proof/shared/models/proof_source.dart';
@@ -130,6 +133,7 @@ class FirestoreService {
     await _safeDelete(_coachProfiles.doc(userId));
 
     final memberships = await getMembershipsForUser(userId);
+    await _deleteSharedActivityForUser(userId);
     for (final membership in memberships) {
       await _safeDelete(_gymMemberships.doc(membership.id));
     }
@@ -145,6 +149,7 @@ class FirestoreService {
       final gym = await getGym(gymId);
       if (gym == null || gym.createdBy != userId) continue;
 
+      await _deleteGymActivity(gymId);
       final atGym = await getMembershipsForGym(gymId);
       for (final membership in atGym) {
         await _safeDelete(_gymMemberships.doc(membership.id));
@@ -863,6 +868,10 @@ class FirestoreService {
     if (!proofDoc.exists) return;
 
     final proof = ProofModel.fromFirestore(proofDoc);
+    final sharedGymId = proof.sharedWithGymId;
+    if (sharedGymId != null) {
+      await _deleteActivityTree(sharedGymId, proofId);
+    }
 
     await _proofsRef(userId).doc(proofId).delete();
 
@@ -1694,6 +1703,7 @@ class FirestoreService {
         location: proof.location,
         variantId: proof.variantId,
         variantName: proof.variantName,
+        sharedWithGymId: proof.sharedWithGymId,
       );
 
       await addProof(proofWithGym);
@@ -1774,6 +1784,7 @@ class FirestoreService {
     await _proofsRef(
       request.athleteId,
     ).doc(request.proofId).update(updatedProof.toFirestore());
+    await _refreshSharedActivityVerification(updatedProof);
 
     await _verificationRequests.doc(requestId).update({
       'status': VerificationRequestStatus.approved.value,
@@ -1825,11 +1836,24 @@ class FirestoreService {
       'stackResynced': false,
     });
 
-    await _proofsRef(request.athleteId).doc(request.proofId).update({
+    final proofRef = _proofsRef(request.athleteId).doc(request.proofId);
+    final proofDoc = await proofRef.get();
+    await proofRef.update({
       'verificationStatus': VerificationStatus.declined.value,
       'proofSource': ProofSource.selfReported.value,
       'rejectionNote': rejectionNote,
     });
+    if (proofDoc.exists) {
+      final sharedGymId = proofDoc.data()?['sharedWithGymId'] as String?;
+      if (sharedGymId != null && sharedGymId.isNotEmpty) {
+        await _refreshSharedActivityVerification(
+          ProofModel.fromFirestore(proofDoc).copyWith(
+            verificationStatus: VerificationStatus.declined,
+            proofSource: ProofSource.selfReported,
+          ),
+        );
+      }
+    }
   }
 
   /// Rebuilds proof-stack stats after coach decisions. Runs as the athlete so
@@ -1854,6 +1878,12 @@ class FirestoreService {
       if (proofId == null || proofId.isEmpty) continue;
 
       await _resyncProofStack(userId, proofId);
+      final sharedProof = await _proofsRef(userId).doc(proofId).get();
+      if (sharedProof.exists) {
+        await _refreshSharedActivityVerification(
+          ProofModel.fromFirestore(sharedProof),
+        );
+      }
       await doc.reference.update({'stackResynced': true});
     }
   }
@@ -2415,6 +2445,12 @@ class FirestoreService {
         status == GymMembershipStatus.rejected ||
         status == GymMembershipStatus.suspended) {
       await _cancelPendingVerificationsForMembership(membership);
+      if (membership.membershipType == GymMembershipType.athlete) {
+        await revokeGymActivityForAthlete(
+          gymId: membership.gymId,
+          athleteId: membership.userId,
+        );
+      }
     }
   }
 
@@ -2503,6 +2539,430 @@ class FirestoreService {
       }
     }
     return null;
+  }
+
+  DocumentReference<Map<String, dynamic>> _activityRef(
+    String gymId,
+    String activityId,
+  ) {
+    return _gyms.doc(gymId).collection('activity').doc(activityId);
+  }
+
+  Stream<List<GymActivity>> watchGymActivity({
+    required String gymId,
+    required int limit,
+  }) {
+    return _gyms
+        .doc(gymId)
+        .collection('activity')
+        .where('status', isEqualTo: GymActivity.activeStatus)
+        .orderBy('sharedAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs.map(GymActivity.fromFirestore).toList());
+  }
+
+  Stream<GymActivity?> watchGymActivityDoc({
+    required String gymId,
+    required String activityId,
+  }) {
+    return _activityRef(gymId, activityId).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      final activity = GymActivity.fromFirestore(doc);
+      if (!activity.isActive) return null;
+      return activity;
+    });
+  }
+
+  Stream<bool> watchGymActivityLiked({
+    required String gymId,
+    required String activityId,
+    required String userId,
+  }) {
+    return _activityRef(gymId, activityId)
+        .collection('likes')
+        .doc(userId)
+        .snapshots()
+        .map((doc) => doc.exists);
+  }
+
+  Stream<List<SocialComment>> watchGymActivityComments({
+    required String gymId,
+    required String activityId,
+    required int limit,
+  }) {
+    return _activityRef(gymId, activityId)
+        .collection('comments')
+        .orderBy('createdAt')
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs.map(SocialComment.fromFirestore).toList());
+  }
+
+  /// Publishes [proofId] to one gym. The proof stays the source of truth.
+  /// Notes and attachments are not copied. Fails closed without an approved
+  /// athlete membership.
+  Future<void> shareProofWithGym({
+    required String userId,
+    required String proofId,
+    required String gymId,
+  }) async {
+    final membership = await getMembership(
+      gymId: gymId,
+      userId: userId,
+      type: GymMembershipType.athlete,
+    );
+    if (membership == null ||
+        membership.status != GymMembershipStatus.approved) {
+      throw StateError('Sharing requires an approved gym membership.');
+    }
+
+    final proofRef = _proofsRef(userId).doc(proofId);
+    final proofDoc = await proofRef.get();
+    if (!proofDoc.exists) {
+      throw StateError('Proof not found.');
+    }
+    final proof = ProofModel.fromFirestore(proofDoc);
+    if (proof.userId != userId) {
+      throw StateError('You can only share your own proofs.');
+    }
+
+    final skillSnap = await _skillsRef(userId).doc(proof.skillId).get();
+    final skillData = skillSnap.data();
+    if (skillData == null) {
+      throw StateError('The skill for this proof is no longer available.');
+    }
+    final rawDiscipline = skillData['discipline'];
+    final identity = await getIdentity(userId);
+    if (identity == null) {
+      throw StateError('Add your profile name before sharing.');
+    }
+
+    final previousGymId = proof.sharedWithGymId;
+    if (previousGymId != null && previousGymId != gymId) {
+      await _deleteActivityTree(previousGymId, proofId);
+    }
+
+    final activityRef = _activityRef(gymId, proofId);
+    // A missing activity document fails the read rule, so permission-denied
+    // means "not shared yet" rather than a failed share.
+    DocumentSnapshot<Map<String, dynamic>>? existing;
+    try {
+      existing = await activityRef.get();
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
+    }
+    if (existing != null && existing.exists) {
+      if (previousGymId == gymId &&
+          existing.data()?['status'] == GymActivity.activeStatus) {
+        return;
+      }
+      await _deleteActivityTree(gymId, proofId);
+    }
+
+    final raw = proofDoc.data() ?? const <String, dynamic>{};
+    final batch = _firestore.batch();
+    batch.update(proofRef, {'sharedWithGymId': gymId});
+    batch.set(activityRef, {
+      'gymId': gymId,
+      'athleteId': userId,
+      'proofId': proofId,
+      'skillId': proof.skillId,
+      'skillName': skillData['name'] as String? ?? '',
+      'discipline': rawDiscipline is String ? rawDiscipline : '',
+      'variantName': proof.variantName ?? '',
+      'result': raw['result'] ?? proof.result,
+      'unit': raw['unit'] ?? proof.unit,
+      'recordedAt': raw['recordedAt'] ?? Timestamp.fromDate(proof.recordedAt),
+      'verificationStatus':
+          raw['verificationStatus'] ?? proof.verificationStatus.value,
+      'displayName': identity.displayName,
+      'avatarUrl': identity.avatarUrl ?? '',
+      'status': GymActivity.activeStatus,
+      'likeCount': 0,
+      'commentCount': 0,
+      'sharedAt': FieldValue.serverTimestamp(),
+      'lastCommentId': '',
+    });
+    await batch.commit();
+  }
+
+  Future<void> revokeProofShare({
+    required String userId,
+    required String proofId,
+    required String gymId,
+  }) async {
+    await _deleteActivityTree(gymId, proofId);
+    await _proofsRef(userId).doc(proofId).update({
+      'sharedWithGymId': FieldValue.delete(),
+    });
+  }
+
+  Future<void> revokeGymActivityForAthlete({
+    required String gymId,
+    required String athleteId,
+  }) async {
+    final snap = await _gyms
+        .doc(gymId)
+        .collection('activity')
+        .where('status', isEqualTo: GymActivity.activeStatus)
+        .where('athleteId', isEqualTo: athleteId)
+        .get();
+    for (final doc in snap.docs) {
+      await _deleteActivityTree(gymId, doc.id);
+    }
+  }
+
+  Future<void> toggleGymActivityLike({
+    required String gymId,
+    required String activityId,
+    required String userId,
+  }) async {
+    final activityRef = _activityRef(gymId, activityId);
+    final likeRef = activityRef.collection('likes').doc(userId);
+    await _firestore.runTransaction((tx) async {
+      final activitySnap = await tx.get(activityRef);
+      if (!activitySnap.exists ||
+          activitySnap.data()?['status'] != GymActivity.activeStatus) {
+        throw StateError('This achievement is no longer shared.');
+      }
+      if (activitySnap.data()?['athleteId'] == userId) {
+        throw StateError('You cannot like your own achievement.');
+      }
+      final count = (activitySnap.data()?['likeCount'] as num?)?.toInt() ?? 0;
+      final likeSnap = await tx.get(likeRef);
+      if (likeSnap.exists) {
+        tx.update(activityRef, {'likeCount': count > 0 ? count - 1 : 0});
+        tx.delete(likeRef);
+      } else {
+        tx.update(activityRef, {'likeCount': count + 1});
+        tx.set(likeRef, {
+          'userId': userId,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  }
+
+  Future<void> addGymActivityComment({
+    required String gymId,
+    required String activityId,
+    required String userId,
+    required String text,
+    required String displayName,
+    required String avatarUrl,
+  }) async {
+    final check = SocialCommentPolicy.check(text);
+    if (!check.isValid || check.text == null) {
+      throw StateError(
+        check.rejection == SocialCommentRejection.tooLong
+            ? 'Comments are limited to ${SocialCommentPolicy.maxLength} characters.'
+            : 'Enter a comment before posting.',
+      );
+    }
+    final activityRef = _activityRef(gymId, activityId);
+    final commentRef = activityRef.collection('comments').doc();
+    final rateRef = activityRef.collection('commentRate').doc(userId);
+    await _firestore.runTransaction((tx) async {
+      final activitySnap = await tx.get(activityRef);
+      if (!activitySnap.exists ||
+          activitySnap.data()?['status'] != GymActivity.activeStatus) {
+        throw StateError('This achievement is no longer shared.');
+      }
+      if (activitySnap.data()?['athleteId'] == userId) {
+        throw StateError('You cannot comment on your own achievement.');
+      }
+      final rateSnap = await tx.get(rateRef);
+      final lastAt = (rateSnap.data()?['lastAt'] as Timestamp?)?.toDate();
+      if (lastAt != null &&
+          DateTime.now().difference(lastAt) < SocialCommentPolicy.minInterval) {
+        throw StateError('Please wait a moment before commenting again.');
+      }
+      final count =
+          (activitySnap.data()?['commentCount'] as num?)?.toInt() ?? 0;
+      tx.update(activityRef, {
+        'commentCount': count + 1,
+        'lastCommentId': commentRef.id,
+      });
+      tx.set(commentRef, {
+        'authorId': userId,
+        'text': check.text,
+        'displayName': displayName,
+        'avatarUrl': avatarUrl,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      tx.set(rateRef, {
+        'userId': userId,
+        'lastAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> deleteGymActivityComment({
+    required String gymId,
+    required String activityId,
+    required String commentId,
+    required String userId,
+  }) async {
+    final activityRef = _activityRef(gymId, activityId);
+    final commentRef = activityRef.collection('comments').doc(commentId);
+    await _firestore.runTransaction((tx) async {
+      final activitySnap = await tx.get(activityRef);
+      final commentSnap = await tx.get(commentRef);
+      if (!activitySnap.exists || !commentSnap.exists) {
+        throw StateError('This comment is no longer available.');
+      }
+      if (commentSnap.data()?['authorId'] != userId) {
+        throw StateError('You can only delete your own comments.');
+      }
+      final count =
+          (activitySnap.data()?['commentCount'] as num?)?.toInt() ?? 0;
+      tx.update(activityRef, {
+        'commentCount': count > 0 ? count - 1 : 0,
+        'lastCommentId': commentId,
+      });
+      tx.delete(commentRef);
+    });
+  }
+
+  Future<void> _refreshSharedActivityVerification(ProofModel proof) async {
+    final gymId = proof.sharedWithGymId;
+    if (gymId == null) return;
+    try {
+      final ref = _activityRef(gymId, proof.id);
+      final snap = await ref.get();
+      if (!snap.exists || snap.data()?['status'] != GymActivity.activeStatus) {
+        return;
+      }
+      if (snap.data()?['verificationStatus'] == proof.verificationStatus.value) {
+        return;
+      }
+      await ref.update({
+        'verificationStatus': proof.verificationStatus.value,
+      });
+    } on FirebaseException {
+      // The feed keeps the last status the rules allow this caller to sync.
+    }
+  }
+
+  Future<void> _deleteSharedActivityForUser(String userId) async {
+    final proofs = await _proofsRef(userId).get();
+    for (final doc in proofs.docs) {
+      final gymId = doc.data()['sharedWithGymId'];
+      if (gymId is String && gymId.isNotEmpty) {
+        await _deleteActivityTree(gymId, doc.id);
+      }
+    }
+    await _deleteUserSocialInteractions(userId);
+  }
+
+  Future<void> _deleteGymActivity(String gymId) async {
+    final snap = await _gyms
+        .doc(gymId)
+        .collection('activity')
+        .where('status', isEqualTo: GymActivity.activeStatus)
+        .limit(200)
+        .get();
+    for (final doc in snap.docs) {
+      await _deleteActivityTree(gymId, doc.id);
+    }
+  }
+
+  Future<void> _deleteActivityTree(String gymId, String activityId) async {
+    final activity = _activityRef(gymId, activityId);
+    final refs = <DocumentReference<Map<String, dynamic>>>[activity];
+    for (final name in ['likes', 'comments', 'commentRate']) {
+      try {
+        final snap = await activity.collection(name).limit(150).get();
+        refs.addAll(snap.docs.map((doc) => doc.reference));
+      } on FirebaseException {
+        // Parent deletion still removes feed access if a subcollection
+        // cannot be listed.
+      }
+    }
+    final batch = _firestore.batch();
+    for (final ref in refs.take(500)) {
+      batch.delete(ref);
+    }
+    try {
+      await batch.commit();
+    } on FirebaseException catch (e) {
+      if (e.code == 'not-found') return;
+      await _safeDelete(activity);
+    }
+  }
+
+  Future<void> _deleteUserSocialInteractions(String userId) async {
+    QuerySnapshot<Map<String, dynamic>> likes;
+    try {
+      likes = await _firestore
+          .collectionGroup('likes')
+          .where('userId', isEqualTo: userId)
+          .get();
+    } on FirebaseException {
+      return;
+    }
+    for (final like in likes.docs) {
+      final activity = like.reference.parent.parent;
+      if (activity == null) {
+        await _safeDelete(like.reference);
+        continue;
+      }
+      try {
+        await _firestore.runTransaction((tx) async {
+          final activitySnap = await tx.get(activity);
+          final likeSnap = await tx.get(like.reference);
+          if (!likeSnap.exists) return;
+          if (activitySnap.exists &&
+              activitySnap.data()?['status'] == GymActivity.activeStatus &&
+              activitySnap.data()?['athleteId'] != userId) {
+            final count =
+                (activitySnap.data()?['likeCount'] as num?)?.toInt() ?? 0;
+            tx.update(activity, {'likeCount': count > 0 ? count - 1 : 0});
+          }
+          tx.delete(like.reference);
+        });
+      } on FirebaseException {
+        await _safeDelete(like.reference);
+      }
+    }
+
+    QuerySnapshot<Map<String, dynamic>> comments;
+    try {
+      comments = await _firestore
+          .collectionGroup('comments')
+          .where('authorId', isEqualTo: userId)
+          .get();
+    } on FirebaseException {
+      return;
+    }
+    for (final comment in comments.docs) {
+      final activity = comment.reference.parent.parent;
+      if (activity == null) {
+        await _safeDelete(comment.reference);
+        continue;
+      }
+      try {
+        await _firestore.runTransaction((tx) async {
+          final activitySnap = await tx.get(activity);
+          final commentSnap = await tx.get(comment.reference);
+          if (!commentSnap.exists) return;
+          if (activitySnap.exists &&
+              activitySnap.data()?['status'] == GymActivity.activeStatus &&
+              activitySnap.data()?['athleteId'] != userId) {
+            final count =
+                (activitySnap.data()?['commentCount'] as num?)?.toInt() ?? 0;
+            tx.update(activity, {
+              'commentCount': count > 0 ? count - 1 : 0,
+              'lastCommentId': comment.id,
+            });
+          }
+          tx.delete(comment.reference);
+        });
+      } on FirebaseException {
+        await _safeDelete(comment.reference);
+      }
+    }
   }
 }
 

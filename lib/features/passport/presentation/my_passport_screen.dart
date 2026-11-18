@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:proof/core/constants/app_constants.dart';
 import 'package:proof/core/constants/app_features.dart';
 import 'package:proof/core/theme/app_colors.dart';
@@ -104,7 +105,7 @@ class _PassportHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Passport',
+                'Profile',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.5,
@@ -126,6 +127,12 @@ class _PassportHeader extends StatelessWidget {
           icon: const Icon(Icons.ios_share_outlined),
           color: AppColors.ink,
           tooltip: 'Share passport',
+        ),
+        IconButton(
+          onPressed: () => context.push('/more'),
+          icon: const Icon(Icons.menu),
+          color: AppColors.ink,
+          tooltip: 'More',
         ),
       ],
     );

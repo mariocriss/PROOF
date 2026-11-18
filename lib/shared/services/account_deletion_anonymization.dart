@@ -71,6 +71,7 @@ class AccountDeletionAnonymization {
       variantId: proof.variantId,
       variantName: proof.variantName,
       coachAccountDeleted: historicallyVerified,
+      sharedWithGymId: proof.sharedWithGymId,
     );
   }
 

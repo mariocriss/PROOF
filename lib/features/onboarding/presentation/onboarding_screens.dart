@@ -11,6 +11,8 @@ import 'package:proof/core/utils/onboarding_paths.dart';
 import 'package:proof/core/utils/validators.dart';
 import 'package:proof/features/gyms/domain/gym_search.dart';
 import 'package:proof/features/gyms/presentation/widgets/gym_manager_widgets.dart';
+import 'package:proof/features/experience/application/experience_providers.dart';
+import 'package:proof/features/experience/application/experience_session_signals.dart';
 import 'package:proof/features/onboarding/presentation/widgets/onboarding_scaffold.dart';
 import 'package:proof/shared/models/coach_profile.dart';
 import 'package:proof/shared/models/gym_model.dart';
@@ -920,6 +922,12 @@ class _GymProfileOnboardingScreenState
         gym: gym,
       );
 
+      try {
+        await ref.read(experienceTriggerServiceProvider).onOnboardingCompleted(
+              userId: user.uid,
+            );
+      } catch (_) {}
+
       if (!mounted) return;
       context.go('/gym-manager/$gymId');
     } on FirebaseException catch (e) {
@@ -1154,6 +1162,10 @@ class _SelectGymOnboardingScreenState
       } else {
         await firestore.completeOnboarding(userId: user.uid);
       }
+
+      try {
+        ref.read(pendingIssuanceExperienceProvider.notifier).state = user.uid;
+      } catch (_) {}
 
       if (!mounted) return;
       context.go('/dashboard');

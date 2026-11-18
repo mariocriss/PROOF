@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:proof/core/theme/app_colors.dart';
 import 'package:proof/core/utils/date_utils.dart';
 import 'package:proof/features/dashboard/domain/dashboard_view_data.dart';
+import 'package:proof/features/experience/application/experience_moment_watchers.dart';
 import 'package:proof/features/proof_stack/domain/proof_stack_view_data.dart';
 import 'package:proof/features/proof_stack/presentation/widgets/confidence_explanation_sheet.dart';
 import 'package:proof/shared/models/timeline_event.dart';
@@ -17,6 +18,7 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(verificationStackSyncProvider);
+    watchExperienceMoments(ref);
     final identityAsync = ref.watch(physicalIdentityProvider);
     final user = ref.watch(currentUserProvider).valueOrNull;
     final skillsAsync = ref.watch(skillsProvider);

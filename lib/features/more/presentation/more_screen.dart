@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -42,6 +43,24 @@ class MoreScreen extends ConsumerWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  IconButton(
+                    tooltip: 'Back',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/passport');
+                      }
+                    },
+                    icon: const Icon(Icons.arrow_back),
+                    color: AppColors.ink,
+                  ),
+                  const SizedBox(width: 4),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,6 +261,20 @@ class MoreScreen extends ConsumerWidget {
                     subtitle: 'Get help and contact support',
                     onTap: () => context.push('/faq'),
                   ),
+                  if (kDebugMode) ...[
+                    MoreMenuRow(
+                      icon: Icons.theater_comedy_outlined,
+                      title: 'Experience Gallery',
+                      subtitle: 'Debug-only emotional moments',
+                      onTap: () => context.push('/debug/experience-gallery'),
+                    ),
+                    MoreMenuRow(
+                      icon: Icons.science_outlined,
+                      title: 'Experience Test Controls',
+                      subtitle: 'Enable flags, inspect receipts',
+                      onTap: () => context.push('/debug/experience-test'),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 24),

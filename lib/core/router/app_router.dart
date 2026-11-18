@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:proof/core/router/router_keys.dart';
@@ -5,6 +6,9 @@ import 'package:proof/core/utils/onboarding_paths.dart';
 import 'package:proof/features/auth/presentation/auth_screens.dart';
 import 'package:proof/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:proof/features/account/presentation/account_screens.dart';
+import 'package:proof/features/experience/application/experience_providers.dart';
+import 'package:proof/features/experience/presentation/gallery/experience_gallery_screen.dart';
+import 'package:proof/features/experience/presentation/gallery/experience_test_controls_screen.dart';
 import 'package:proof/features/identity/presentation/identity_screens.dart';
 import 'package:proof/features/coach_tools/presentation/coach_tools_screens.dart';
 import 'package:proof/features/coaches/presentation/coach_profile_screen.dart';
@@ -17,6 +21,8 @@ import 'package:proof/features/people/presentation/person_profile_screen.dart';
 import 'package:proof/features/people/presentation/request_screens.dart';
 import 'package:proof/features/more/presentation/more_screen.dart';
 import 'package:proof/features/passport/presentation/my_passport_tab.dart';
+import 'package:proof/features/social/presentation/social_activity_screen.dart';
+import 'package:proof/features/social/presentation/social_screen.dart';
 import 'package:proof/features/passport/presentation/passport_screen.dart';
 import 'package:proof/features/proof_stack/presentation/proof_stack_screen.dart';
 import 'package:proof/features/proof_stack/presentation/skill_proof_stack_screen.dart';
@@ -209,21 +215,31 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/passport',
+                path: '/social',
                 builder: (context, state) => DeferredShellTab(
                   tabIndex: 3,
-                  builder: (_, __) => const MyPassportTab(),
+                  builder: (_, __) => const SocialScreen(),
                 ),
+                routes: [
+                  GoRoute(
+                    path: 'activity/:gymId/:activityId',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => SocialActivityScreen(
+                      gymId: state.pathParameters['gymId']!,
+                      activityId: state.pathParameters['activityId']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/more',
+                path: '/passport',
                 builder: (context, state) => DeferredShellTab(
                   tabIndex: 4,
-                  builder: (_, __) => const MoreScreen(),
+                  builder: (_, __) => const MyPassportTab(),
                 ),
               ),
             ],
@@ -262,6 +278,32 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
         ],
+      ),
+      GoRoute(
+        path: '/more',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            child: const MoreScreen(),
+            transitionDuration: const Duration(milliseconds: 280),
+            reverseTransitionDuration: const Duration(milliseconds: 240),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              final curved = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+              return SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(curved),
+                child: child,
+              );
+            },
+          );
+        },
       ),
       GoRoute(
         path: '/settings',
@@ -409,6 +451,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
+      if (experienceGalleryRouteEnabled)
+        GoRoute(
+          path: '/debug/experience-gallery',
+          parentNavigatorKey: rootNavigatorKey,
+          builder: (context, state) => const ExperienceGalleryScreen(),
+        ),
+      if (experienceGalleryRouteEnabled)
+        GoRoute(
+          path: '/debug/experience-test',
+          parentNavigatorKey: rootNavigatorKey,
+          builder: (context, state) => const ExperienceTestControlsScreen(),
+        ),
     ],
   );
 

@@ -31,6 +31,7 @@ class ProofModel {
     this.variantId,
     this.variantName,
     this.coachAccountDeleted = false,
+    this.sharedWithGymId,
   });
 
   final String id;
@@ -61,6 +62,13 @@ class ProofModel {
   /// True when the verifying coach account was deleted; historical verification
   /// is kept without a live coach UID or profile link.
   final bool coachAccountDeleted;
+
+  /// Gym this proof was explicitly shared with. Absent or null means private.
+  /// Never inferred from coach verification or a previous upload.
+  final String? sharedWithGymId;
+
+  bool get isSharedWithGym =>
+      sharedWithGymId != null && sharedWithGymId!.isNotEmpty;
 
   bool get isCoachVerifiedForStack {
     if (verificationStatus == VerificationStatus.coachVerified) return true;
@@ -148,6 +156,7 @@ class ProofModel {
       variantId: data['variantId'] as String?,
       variantName: data['variantName'] as String?,
       coachAccountDeleted: coachAccountDeleted,
+      sharedWithGymId: _nonEmpty(data['sharedWithGymId'] as String?),
     );
   }
 
@@ -179,7 +188,14 @@ class ProofModel {
       'variantId': variantId,
       'variantName': variantName,
       'coachAccountDeleted': coachAccountDeleted,
+      if (sharedWithGymId != null && sharedWithGymId!.isNotEmpty)
+        'sharedWithGymId': sharedWithGymId,
     };
+  }
+
+  static String? _nonEmpty(String? value) {
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   ProofModel copyWith({
@@ -219,6 +235,7 @@ class ProofModel {
       variantId: variantId,
       variantName: variantName,
       coachAccountDeleted: coachAccountDeleted ?? this.coachAccountDeleted,
+      sharedWithGymId: sharedWithGymId,
     );
   }
 }

@@ -119,6 +119,74 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/gymMemberships/$(id)).data.status == 'approved';
     }
 
+    function isApprovedGymMember(gymId) {
+      return isApprovedAthleteAtGym(gymId)
+        || isApprovedCoachAtGym(gymId)
+        || isGymManager(gymId);
+    }
+
+    function activityPath(gymId, activityId) {
+      return /databases/$(database)/documents/gyms/$(gymId)/activity/$(activityId);
+    }
+
+    function sharedActivityOpen(gymId, activityId) {
+      return exists(activityPath(gymId, activityId))
+        && get(activityPath(gymId, activityId)).data.status == 'active'
+        && get(activityPath(gymId, activityId)).data.gymId == gymId;
+    }
+
+    function proofPath(athleteId, proofId) {
+      return /databases/$(database)/documents/users/$(athleteId)/proofs/$(proofId);
+    }
+
+    function likeCountChangeIsValid(gymId, activityId) {
+      let likePath = /databases/$(database)/documents/gyms/$(gymId)/activity/$(activityId)/likes/$(request.auth.uid);
+      let before = resource.data.likeCount;
+      let after = request.resource.data.likeCount;
+      let added = !exists(likePath) && existsAfter(likePath);
+      let removed = exists(likePath) && !existsAfter(likePath);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+        && resource.data.athleteId != request.auth.uid
+        && resource.data.status == 'active'
+        && (
+          (added
+            && after == before + 1
+            && getAfter(likePath).data.userId == request.auth.uid)
+          || (removed && before > 0 && after == before - 1)
+        );
+    }
+
+    function commentCountChangeIsValid(gymId, activityId) {
+      let id = request.resource.data.lastCommentId;
+      let commentPath = /databases/$(database)/documents/gyms/$(gymId)/activity/$(activityId)/comments/$(id);
+      let added = !exists(commentPath) && existsAfter(commentPath);
+      let removed = exists(commentPath) && !existsAfter(commentPath);
+      return id is string
+        && id.size() > 0
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['commentCount', 'lastCommentId'])
+        && resource.data.athleteId != request.auth.uid
+        && resource.data.status == 'active'
+        && (
+          (added
+            && request.resource.data.commentCount == resource.data.commentCount + 1
+            && getAfter(commentPath).data.authorId == request.auth.uid)
+          || (removed
+            && resource.data.commentCount > 0
+            && request.resource.data.commentCount == resource.data.commentCount - 1
+            && get(commentPath).data.authorId == request.auth.uid)
+        );
+    }
+
+    function verificationRefreshIsValid() {
+      let proof = proofPath(resource.data.athleteId, resource.data.proofId);
+      return exists(proof)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['verificationStatus'])
+        && request.resource.data.verificationStatus is string
+        && request.resource.data.verificationStatus == get(proof).data.verificationStatus;
+    }
+
     function isGymCreator(gymId) {
       return request.auth != null
         && exists(/databases/$(database)/documents/gyms/$(gymId))
@@ -299,6 +367,47 @@ service cloud.firestore {
         );
         allow update, delete: if request.auth != null && request.auth.uid == userId;
       }
+
+      // Experience receipts — owner-only; no private proof body content.
+      // Read is path-scoped to the authenticated owner so get-on-missing
+      // (claim transactions / eligibility) and status queries succeed.
+      match /experienceReceipts/{eventId} {
+        allow read: if request.auth != null
+          && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.ownerId == userId
+          && request.resource.data.keys().hasAll([
+            'ownerId',
+            'eventType',
+            'sourceId',
+            'importance',
+            'status',
+            'createdAt',
+            'schemaVersion'
+          ])
+          && request.resource.data.status in [
+            'pending',
+            'presenting',
+            'completed',
+            'dismissed',
+            'failed'
+          ];
+        allow update: if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.ownerId == userId
+          && request.resource.data.ownerId == userId
+          && request.resource.data.status in [
+            'pending',
+            'presenting',
+            'completed',
+            'dismissed',
+            'failed'
+          ];
+        allow delete: if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.ownerId == userId;
+      }
     }
 
     match /handles/{handle} {
@@ -329,6 +438,155 @@ service cloud.firestore {
       allow update: if request.auth != null && canManageGym(gymId);
       allow delete: if request.auth != null
         && resource.data.createdBy == request.auth.uid;
+
+      match /activity/{activityId} {
+        allow read: if isApprovedGymMember(gymId)
+          && resource.data.status == 'active';
+
+        allow create: if isApprovedAthleteAtGym(gymId)
+          && activityId == request.resource.data.proofId
+          && request.resource.data.gymId == gymId
+          && request.resource.data.athleteId == request.auth.uid
+          && request.resource.data.status == 'active'
+          && request.resource.data.likeCount == 0
+          && request.resource.data.commentCount == 0
+          && request.resource.data.lastCommentId == ''
+          && request.resource.data.sharedAt == request.time
+          && request.resource.data.keys().hasOnly([
+            'gymId', 'athleteId', 'proofId', 'skillId', 'skillName',
+            'discipline', 'variantName', 'result', 'unit', 'recordedAt',
+            'verificationStatus', 'displayName', 'avatarUrl', 'status',
+            'likeCount', 'commentCount', 'sharedAt', 'lastCommentId'
+          ])
+          && exists(proofPath(request.auth.uid, activityId))
+          && getAfter(proofPath(request.auth.uid, activityId)).data.userId == request.auth.uid
+          && getAfter(proofPath(request.auth.uid, activityId)).data.sharedWithGymId == gymId
+          && getAfter(proofPath(request.auth.uid, activityId)).data.skillId == request.resource.data.skillId
+          && getAfter(proofPath(request.auth.uid, activityId)).data.result == request.resource.data.result
+          && getAfter(proofPath(request.auth.uid, activityId)).data.unit == request.resource.data.unit
+          && getAfter(proofPath(request.auth.uid, activityId)).data.recordedAt == request.resource.data.recordedAt
+          && getAfter(proofPath(request.auth.uid, activityId)).data.verificationStatus == request.resource.data.verificationStatus
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid)/skills/$(request.resource.data.skillId))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)/skills/$(request.resource.data.skillId)).data.name == request.resource.data.skillName
+          && request.resource.data.discipline == (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)/skills/$(request.resource.data.skillId)).data.discipline is string
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)/skills/$(request.resource.data.skillId)).data.discipline
+              : ''
+          )
+          && request.resource.data.variantName == (
+            getAfter(proofPath(request.auth.uid, activityId)).data.variantName == null
+              ? ''
+              : getAfter(proofPath(request.auth.uid, activityId)).data.variantName
+          )
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid)/identity/profile)
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)/identity/profile).data.displayName == request.resource.data.displayName
+          && request.resource.data.avatarUrl == (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)/identity/profile).data.avatarUrl is string
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)/identity/profile).data.avatarUrl
+              : ''
+          );
+
+        allow update: if isApprovedGymMember(gymId) && (
+          likeCountChangeIsValid(gymId, activityId)
+          || commentCountChangeIsValid(gymId, activityId)
+          || verificationRefreshIsValid()
+        );
+
+        allow delete: if resource.data.athleteId == request.auth.uid
+          || canManageGym(gymId);
+
+        match /likes/{userId} {
+          allow read: if request.auth.uid == userId
+            || (isApprovedGymMember(gymId) && sharedActivityOpen(gymId, activityId));
+          allow create: if isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId)
+            && userId == request.auth.uid
+            && get(activityPath(gymId, activityId)).data.athleteId != request.auth.uid
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.keys().hasOnly(['userId', 'createdAt'])
+            && getAfter(activityPath(gymId, activityId)).data.likeCount
+              == get(activityPath(gymId, activityId)).data.likeCount + 1;
+          allow update: if false;
+          allow delete: if (
+            request.auth.uid == userId
+            && isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId)
+            && getAfter(activityPath(gymId, activityId)).data.likeCount
+              == get(activityPath(gymId, activityId)).data.likeCount - 1
+          ) || (
+            !existsAfter(activityPath(gymId, activityId))
+            && (
+              get(activityPath(gymId, activityId)).data.athleteId == request.auth.uid
+              || canManageGym(gymId)
+            )
+          );
+        }
+
+        match /comments/{commentId} {
+          allow read: if isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId);
+          allow create: if isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId)
+            && get(activityPath(gymId, activityId)).data.athleteId != request.auth.uid
+            && request.resource.data.authorId == request.auth.uid
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 300
+            && request.resource.data.text.matches('.*\\S.*')
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.displayName is string
+            && request.resource.data.avatarUrl is string
+            && request.resource.data.displayName == get(/databases/$(database)/documents/users/$(request.auth.uid)/identity/profile).data.displayName
+            && request.resource.data.keys().hasOnly([
+              'authorId', 'text', 'displayName', 'avatarUrl', 'createdAt'
+            ])
+            && existsAfter(/databases/$(database)/documents/gyms/$(gymId)/activity/$(activityId)/commentRate/$(request.auth.uid))
+            && getAfter(/databases/$(database)/documents/gyms/$(gymId)/activity/$(activityId)/commentRate/$(request.auth.uid)).data.lastAt == request.time
+            && getAfter(activityPath(gymId, activityId)).data.commentCount
+              == get(activityPath(gymId, activityId)).data.commentCount + 1
+            && getAfter(activityPath(gymId, activityId)).data.lastCommentId == commentId;
+          allow update: if false;
+          allow delete: if (
+            resource.data.authorId == request.auth.uid
+            && isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId)
+            && getAfter(activityPath(gymId, activityId)).data.commentCount
+              == get(activityPath(gymId, activityId)).data.commentCount - 1
+            && getAfter(activityPath(gymId, activityId)).data.lastCommentId == commentId
+          ) || (
+            !existsAfter(activityPath(gymId, activityId))
+            && (
+              get(activityPath(gymId, activityId)).data.athleteId == request.auth.uid
+              || canManageGym(gymId)
+            )
+          );
+        }
+
+        match /commentRate/{userId} {
+          allow read: if isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId);
+          allow create: if userId == request.auth.uid
+            && isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId)
+            && !exists(/databases/$(database)/documents/gyms/$(gymId)/activity/$(activityId)/commentRate/$(userId))
+            && request.resource.data.userId == userId
+            && request.resource.data.lastAt == request.time
+            && request.resource.data.keys().hasOnly(['userId', 'lastAt']);
+          allow update: if userId == request.auth.uid
+            && isApprovedGymMember(gymId)
+            && sharedActivityOpen(gymId, activityId)
+            && resource.data.lastAt < request.time - duration.value(15, 's')
+            && request.resource.data.userId == userId
+            && request.resource.data.lastAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastAt']);
+          allow delete: if !existsAfter(activityPath(gymId, activityId))
+            && (
+              get(activityPath(gymId, activityId)).data.athleteId == request.auth.uid
+              || canManageGym(gymId)
+            );
+        }
+      }
     }
 
     match /gymMemberships/{membershipId} {

@@ -795,7 +795,7 @@ class _MoreTab extends ConsumerWidget {
                         case AppMode.athlete:
                           context.go('/dashboard');
                         case AppMode.coach:
-                          context.go('/more');
+                          context.push('/more');
                         case AppMode.gymManager:
                           context.go('/gym-manager/$gymId');
                       }
